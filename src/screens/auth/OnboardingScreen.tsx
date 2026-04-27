@@ -8,6 +8,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { AuthStackParams } from '../../navigation/AuthNavigator'
 import { Colors } from '../../constants/colors'
 import { Fonts } from '../../constants/fonts'
+import { Videos } from '../../constants/videos'
 import { Video, ResizeMode } from 'expo-av'
 import { LinearGradient } from 'expo-linear-gradient'
 import * as Haptics from 'expo-haptics'
@@ -30,7 +31,7 @@ type Props = {
 const slides = [
   {
     id: '1',
-    video: require('../../../assets/videos/onboarding-1.mp4'),
+    video: Videos.onboarding1,
     tag: 'PAST · PRESENT · FUTURE',
     title: 'We Know\nYour Past',
     subtitle: 'Tell us when and where you were born. We reveal what already happened before predicting your future.',
@@ -38,7 +39,7 @@ const slides = [
   },
   {
     id: '2',
-    video: require('../../../assets/videos/onboarding-2.mp4'),
+    video: Videos.onboarding2,
     tag: 'EVERY TRADITION',
     title: '20 Systems.\nOne Truth.',
     subtitle: 'Western, Vedic, Chinese, Mayan, Celtic, Egyptian, Kabbalistic, Persian, Tibetan and eleven more traditions speak to your chart.',
@@ -46,7 +47,7 @@ const slides = [
   },
   {
     id: '3',
-    video: require('../../../assets/videos/onboarding-3.mp4'),
+    video: Videos.onboarding3,
     tag: 'LOVE · CAREER · PURPOSE',
     title: 'Your Entire\nLife. Decoded.',
     subtitle: 'No vague predictions. No generic horoscopes. Only your truth, explained in simple and honest words.',
@@ -299,3 +300,4 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 })
+        
