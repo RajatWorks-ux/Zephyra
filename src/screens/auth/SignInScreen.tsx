@@ -154,10 +154,7 @@ export function SignInScreen({ navigation }: Props) {
   // ─── FIXED: Google OAuth ───────────────────────────────────────────────────
   async function handleGoogle() {
     try {
-      const redirectTo = AuthSession.makeRedirectUri({
-        scheme: 'zephyra',
-        path: 'auth/callback',
-      })
+      const redirectTo = 'zephyra://auth/callback'
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
