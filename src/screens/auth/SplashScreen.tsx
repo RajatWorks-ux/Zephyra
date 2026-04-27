@@ -6,6 +6,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { AuthStackParams } from '../../navigation/AuthNavigator'
 import { Colors } from '../../constants/colors'
 import { Fonts } from '../../constants/fonts'
+import { Videos } from '../../constants/videos'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Video, ResizeMode } from 'expo-av'
 import Animated, {
@@ -103,7 +104,7 @@ export function SplashScreen({ navigation }: Props) {
     <Animated.View style={[styles.root, screenStyle]}>
       {/* Video Background */}
       <Video
-        source={require('../../../assets/videos/splash-bg.mp4')}
+        source={Videos.splashBg}
         style={StyleSheet.absoluteFillObject}
         resizeMode={ResizeMode.COVER}
         isLooping
@@ -221,3 +222,4 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 })
+    
