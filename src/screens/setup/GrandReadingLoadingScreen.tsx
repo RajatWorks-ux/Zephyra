@@ -5,7 +5,8 @@ import { RouteProp } from '@react-navigation/native'
 import { SetupStackParams } from '../../navigation/SetupNavigator'
 import { Colors } from '../../constants/colors'
 import { Fonts } from '../../constants/fonts'
-import { StarField } from '../../components/layout/StarField'
+import { Videos } from '../../../constants/videos'
+import { Video, ResizeMode } from 'expo-av'
 import { LinearGradient } from 'expo-linear-gradient'
 
 type Props = {
@@ -33,7 +34,6 @@ export function GrandReadingLoadingScreen({ navigation }: Props) {
   const rotateAnim = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
-    // Rotate animation (continuous ring spin)
     Animated.loop(
       Animated.timing(rotateAnim, {
         toValue: 1,
@@ -42,14 +42,12 @@ export function GrandReadingLoadingScreen({ navigation }: Props) {
       })
     ).start()
 
-    // Progress bar
     Animated.timing(progressAnim, {
       toValue: 1,
       duration: 9000,
       useNativeDriver: false,
     }).start()
 
-    // Cycle loading texts
     let index = 0
     const interval = setInterval(() => {
       Animated.timing(textOpacity, {
@@ -67,11 +65,8 @@ export function GrandReadingLoadingScreen({ navigation }: Props) {
       })
     }, 900)
 
-    // Phase 2 will replace this timeout with the real AI call
     const navTimer = setTimeout(() => {
       clearInterval(interval)
-      // RootNavigator handles navigation automatically once birth profile is saved
-      // In Phase 2 we will navigate to PastReveal screen here
     }, 10000)
 
     return () => {
@@ -92,11 +87,20 @@ export function GrandReadingLoadingScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
+      {/* Video Background */}
+      <Video
+        source={Videos.loadingBg}
+        style={StyleSheet.absoluteFillObject}
+        resizeMode={ResizeMode.COVER}
+        isLooping
+        shouldPlay
+        isMuted
+      />
       <LinearGradient
-        colors={[Colors.background, '#0A0A20', Colors.background]}
+        colors={['rgba(5,5,15,0.3)', 'rgba(5,5,15,0.7)', Colors.background]}
+        locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFillObject}
       />
-      <StarField />
 
       <View style={styles.center}>
         {/* Spinning ring */}
