@@ -562,9 +562,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#FFFFFF',
   },
-  cityResultSub: {
+   cityResultSub: {
     fontFamily: Fonts.body,
     fontSize: 13,
     color: 'rgba(255,255,255,0.4)',
     marginTop: 2,
   },
+})
+   
