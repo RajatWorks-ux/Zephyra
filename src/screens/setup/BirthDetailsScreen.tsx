@@ -10,6 +10,7 @@ import { SetupStackParams } from '../../navigation/SetupNavigator'
 import { Button } from '../../components/ui/Button'
 import { WheelPicker } from '../../components/ui/WheelPicker'
 import { Fonts } from '../../constants/fonts'
+import { Videos } from '../../../constants/videos'
 import { saveBirthProfile } from '../../services/supabase'
 import { useAuthStore } from '../../store/authStore'
 import type { BirthFormData, CityResult } from '../../types'
@@ -136,7 +137,7 @@ export function BirthDetailsScreen({ navigation }: Props) {
     <View style={styles.root}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       <Video
-        source={require('../../../assets/videos/birth-bg.mp4')}
+        source={Videos.birthBg}
         style={StyleSheet.absoluteFillObject}
         resizeMode={ResizeMode.COVER}
         isLooping
