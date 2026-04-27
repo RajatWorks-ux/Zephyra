@@ -6,6 +6,7 @@ import {
 } from 'react-native'
 import * as WebBrowser from 'expo-web-browser'
 import * as Linking from 'expo-linking'
+import * as AuthSession from 'expo-auth-session'
 import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { AuthStackParams } from '../../navigation/AuthNavigator'
 import { Colors } from '../../constants/colors'
@@ -150,18 +151,26 @@ export function SignInScreen({ navigation }: Props) {
     }
   }
 
+  // ─── FIXED: Google OAuth ───────────────────────────────────────────────────
   async function handleGoogle() {
     try {
-      const redirectTo = Linking.createURL('auth/callback')
+      const redirectTo = AuthSession.makeRedirectUri({
+        scheme: 'zephyra',
+        path: 'auth/callback',
+      })
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo, skipBrowserRedirect: true },
       })
+
       if (error || !data.url) {
         Alert.alert('Google Sign In Failed', error?.message || 'No URL')
         return
       }
+
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo)
+
       if (result.type === 'success') {
         const { params } = Linking.parse(result.url)
         if (params?.code) {
@@ -172,6 +181,7 @@ export function SignInScreen({ navigation }: Props) {
       Alert.alert('Error', e.message)
     }
   }
+  // ──────────────────────────────────────────────────────────────────────────
 
   const strength = getStrength()
 
@@ -406,3 +416,4 @@ const styles = StyleSheet.create({
   socialLabel: { fontFamily: Fonts.bodySemiBold, fontSize: 14, color: 'rgba(255,255,255,0.7)' },
   legal: { fontFamily: Fonts.body, fontSize: 11, color: 'rgba(255,255,255,0.2)', textAlign: 'center', lineHeight: 18 },
 })
+    
