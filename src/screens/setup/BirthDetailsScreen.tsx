@@ -46,7 +46,6 @@ export function BirthDetailsScreen({ navigation }: Props) {
   const [isPM, setIsPM] = useState(false)
   const [timeKnown, setTimeKnown] = useState(true)
 
-  // City search — now uses Modal to avoid keyboard issues
   const [showCityModal, setShowCityModal] = useState(false)
   const [cityQuery, setCityQuery] = useState('')
   const [cityResults, setCityResults] = useState<CityResult[]>([])
@@ -153,6 +152,7 @@ export function BirthDetailsScreen({ navigation }: Props) {
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
       >
         {/* Header */}
         <View style={styles.headerArea}>
@@ -236,16 +236,16 @@ export function BirthDetailsScreen({ navigation }: Props) {
           ) : (
             <View style={styles.unknownTimeCard}>
               <Text style={styles.unknownTimeText}>
-                We will use 6:00 AM as your default. Sun and Moon signs remain perfectly accurate. Rising sign may vary slightly.
+                No worries — we'll still generate your Sun and Moon signs accurately.
+                You can update this later if you find your birth certificate.
               </Text>
             </View>
           )}
         </BlurView>
 
-        {/* Place of Birth — Opens City Modal (no keyboard issue!) */}
+        {/* Place Section */}
         <BlurView intensity={20} tint="dark" style={styles.section}>
           <Text style={styles.sectionLabel}>Place of Birth</Text>
-
           <TouchableOpacity
             style={styles.cityPickerBtn}
             onPress={() => setShowCityModal(true)}
@@ -260,79 +260,83 @@ export function BirthDetailsScreen({ navigation }: Props) {
                 </Text>
               </View>
             ) : (
-              <Text style={styles.cityPlaceholder}>Tap to search your birth city...</Text>
+              <Text style={styles.cityPlaceholder}>Search your birth city…</Text>
             )}
-            <Text style={styles.cityChevron}>{selectedCity ? '✓' : '→'}</Text>
+            <Text style={{ fontSize: 18, color: selectedCity ? '#C9A84C' : 'rgba(255,255,255,0.3)' }}>
+              {selectedCity ? '✓' : '›'}
+            </Text>
           </TouchableOpacity>
         </BlurView>
 
         {/* Submit */}
         <TouchableOpacity
-          style={[styles.revealBtn, loading && { opacity: 0.6 }]}
+          style={styles.revealBtn}
           onPress={handleSubmit}
           disabled={loading}
         >
           <LinearGradient
             colors={['#C9A84C', '#7C3AED']}
-            style={styles.revealBtnGrad}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
+            style={styles.revealBtnGrad}
           >
-            <Text style={styles.revealBtnText}>
-              {loading ? 'Calculating Your Chart...' : 'Reveal My Cosmos ✦'}
-            </Text>
+            {loading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.revealBtnText}>Reveal My Cosmos ✦</Text>
+            }
           </LinearGradient>
         </TouchableOpacity>
       </ScrollView>
 
-      {/* CITY SEARCH MODAL — fixes keyboard hiding issue completely */}
+      {/* City Search Modal */}
       <Modal visible={showCityModal} animationType="slide" transparent>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={styles.modalOverlay}>
             <BlurView intensity={40} tint="dark" style={styles.modalCard}>
               <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>Search Birth City</Text>
+              <Text style={styles.modalTitle}>Birth City</Text>
 
               <TextInput
                 style={styles.citySearchInput}
+                placeholder="Type a city name…"
+                placeholderTextColor="rgba(255,255,255,0.3)"
                 value={cityQuery}
                 onChangeText={handleCityInput}
-                placeholder="Type city name..."
-                placeholderTextColor="rgba(255,255,255,0.3)"
                 autoFocus
-                returnKeyType="search"
               />
 
               {citySearching && (
-                <ActivityIndicator color="#C9A84C" style={{ marginVertical: 16 }} />
+                <ActivityIndicator color="#C9A84C" style={{ marginVertical: 12 }} />
               )}
 
               <FlatList
                 data={cityResults}
                 keyExtractor={(_, i) => String(i)}
-                showsVerticalScrollIndicator={false}
-                style={{ maxHeight: height * 0.45 }}
+                style={{ maxHeight: height * 0.4 }}
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     style={styles.cityResultRow}
                     onPress={() => {
                       setSelectedCity(item)
-                      setCityQuery(`${item.city}, ${item.country}`)
-                      setCityResults([])
                       setShowCityModal(false)
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                      setCityResults([])
+                      setCityQuery('')
                     }}
                   >
                     <View style={styles.cityResultPin}>
                       <Text style={{ fontSize: 18 }}>📍</Text>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.cityResultMain}>{item.city}</Text>
-                      <Text style={styles.cityResultSub}>{item.country}</Text>
+                    <View>
+                      <Text style={styles.cityResultMain}>
+                        {item.city}, {item.country}
+                      </Text>
+                      <Text style={styles.cityResultSub} numberOfLines={1}>
+                        {item.display_name}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 )}
@@ -497,10 +501,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: 'rgba(255,255,255,0.25)',
   },
-  cityChevron: {
-    fontSize: 18,
-    color: selectedCity => selectedCity ? '#C9A84C' : 'rgba(255,255,255,0.3)',
-  },
   revealBtn: { marginTop: 8, borderRadius: 20, overflow: 'hidden' },
   revealBtnGrad: { paddingVertical: 22, alignItems: 'center' },
   revealBtnText: {
@@ -509,7 +509,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
-  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -562,11 +561,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#FFFFFF',
   },
-   cityResultSub: {
+  cityResultSub: {
     fontFamily: Fonts.body,
     fontSize: 13,
     color: 'rgba(255,255,255,0.4)',
     marginTop: 2,
   },
+  closeModal: {
+    marginTop: 16,
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  closeModalText: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.4)',
+  },
 })
-   
