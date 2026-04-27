@@ -10,6 +10,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { AuthStackParams } from '../../navigation/AuthNavigator'
 import { Colors } from '../../constants/colors'
 import { Fonts } from '../../constants/fonts'
+import { Videos } from '../../constants/videos'
 import { supabase } from '../../services/supabase'
 import { Video, ResizeMode } from 'expo-av'
 import { BlurView } from 'expo-blur'
@@ -189,7 +190,7 @@ export function SignInScreen({ navigation }: Props) {
       <View style={styles.root}>
         {/* Video Background */}
         <Video
-          source={require('../../../assets/videos/signin-bg.mp4')}
+          source={Videos.signInBg}
           style={StyleSheet.absoluteFillObject}
           resizeMode={ResizeMode.COVER}
           isLooping
@@ -482,3 +483,4 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 })
+          
