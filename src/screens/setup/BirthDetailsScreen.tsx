@@ -1,24 +1,24 @@
-import React, { useState, useCallback } from 'react'
+// src/screens/setup/BirthDetailsScreen.tsx
+import React, { useState, useCallback, useRef } from 'react'
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, Alert, TextInput, Modal, FlatList,
+  KeyboardAvoidingView, Platform, Dimensions, StatusBar,
 } from 'react-native'
 import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { SetupStackParams } from '../../navigation/SetupNavigator'
-import { ScreenWrapper } from '../../components/layout/ScreenWrapper'
 import { Button } from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
 import { WheelPicker } from '../../components/ui/WheelPicker'
-import { Colors } from '../../constants/colors'
 import { Fonts } from '../../constants/fonts'
 import { saveBirthProfile } from '../../services/supabase'
 import { useAuthStore } from '../../store/authStore'
 import type { BirthFormData, CityResult } from '../../types'
+import { Video, ResizeMode } from 'expo-av'
+import { BlurView } from 'expo-blur'
+import { LinearGradient } from 'expo-linear-gradient'
+import * as Haptics from 'expo-haptics'
+
+const { height, width } = Dimensions.get('window')
 
 type Props = {
   navigation: NativeStackNavigationProp<SetupStackParams, 'BirthDetails'>
@@ -40,26 +40,26 @@ export function BirthDetailsScreen({ navigation }: Props) {
   const [dayIndex, setDayIndex] = useState(0)
   const [monthIndex, setMonthIndex] = useState(0)
   const [yearIndex, setYearIndex] = useState(0)
-
   const [hourIndex, setHourIndex] = useState(0)
   const [minuteIndex, setMinuteIndex] = useState(0)
   const [isPM, setIsPM] = useState(false)
   const [timeKnown, setTimeKnown] = useState(true)
 
+  // City search — now uses Modal to avoid keyboard issues
+  const [showCityModal, setShowCityModal] = useState(false)
   const [cityQuery, setCityQuery] = useState('')
   const [cityResults, setCityResults] = useState<CityResult[]>([])
   const [selectedCity, setSelectedCity] = useState<CityResult | null>(null)
   const [citySearching, setCitySearching] = useState(false)
-
   const [loading, setLoading] = useState(false)
-  const searchTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const searchCities = useCallback(async (query: string) => {
     if (query.length < 2) { setCityResults([]); return }
     setCitySearching(true)
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&addressdetails=1`,
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=8&addressdetails=1`,
         { headers: { 'Accept-Language': 'en', 'User-Agent': 'ZephyraApp/1.0' } }
       )
       const data = await res.json()
@@ -68,64 +68,43 @@ export function BirthDetailsScreen({ navigation }: Props) {
         .map((item: any) => ({
           display_name: item.display_name,
           city:
-            item.address?.city ||
-            item.address?.town ||
-            item.address?.village ||
-            item.address?.county ||
-            item.name,
+            item.address?.city || item.address?.town ||
+            item.address?.village || item.address?.county || item.name,
           country: item.address?.country || '',
           lat: parseFloat(item.lat),
           lng: parseFloat(item.lon),
         }))
       setCityResults(results)
-    } catch {
-      // silently fail
-    } finally {
-      setCitySearching(false)
-    }
+    } catch { /* silent */ }
+    finally { setCitySearching(false) }
   }, [])
 
   function handleCityInput(text: string) {
     setCityQuery(text)
-    setSelectedCity(null)
     if (searchTimeout.current) clearTimeout(searchTimeout.current)
     searchTimeout.current = setTimeout(() => searchCities(text), 500)
   }
 
   async function getTimezone(lat: number, lng: number): Promise<string> {
     try {
-      const res = await fetch(
-        `https://timeapi.io/api/TimeZone/coordinate?latitude=${lat}&longitude=${lng}`
-      )
+      const res = await fetch(`https://timeapi.io/api/TimeZone/coordinate?latitude=${lat}&longitude=${lng}`)
       const data = await res.json()
       return data.timeZone || 'UTC'
-    } catch {
-      return 'UTC'
-    }
+    } catch { return 'UTC' }
   }
 
   async function handleSubmit() {
-    if (!selectedCity) {
-      Alert.alert('Missing', 'Please select your birth city from the list')
-      return
-    }
-    if (!user) {
-      Alert.alert('Error', 'Not logged in')
-      return
-    }
-
+    if (!selectedCity) { Alert.alert('Missing', 'Please select your birth city'); return }
+    if (!user) { Alert.alert('Error', 'Not logged in'); return }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
     setLoading(true)
     try {
       const timezone = await getTimezone(selectedCity.lat, selectedCity.lng)
-
       const day = parseInt(DAYS[dayIndex])
       const month = monthIndex + 1
       const year = parseInt(YEARS[yearIndex])
       const hour = parseInt(HOURS[hourIndex])
-      const minute = parseInt(MINUTES[minuteIndex])
-
       const birthDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-
       let birthTime: string | null = null
       if (timeKnown) {
         let h = hour
@@ -133,43 +112,20 @@ export function BirthDetailsScreen({ navigation }: Props) {
         if (!isPM && h === 12) h = 0
         birthTime = `${String(h).padStart(2, '0')}:${MINUTES[minuteIndex]}:00`
       }
-
       const birthData: BirthFormData = {
-        day,
-        month,
-        year,
-        hour,
-        minute,
-        isPM,
-        timeKnown,
-        city: selectedCity.city,
-        country: selectedCity.country,
-        lat: selectedCity.lat,
-        lng: selectedCity.lng,
-        timezone,
+        day, month, year, hour, minute: parseInt(MINUTES[minuteIndex]),
+        isPM, timeKnown, city: selectedCity.city, country: selectedCity.country,
+        lat: selectedCity.lat, lng: selectedCity.lng, timezone,
       }
-
-      // ✅ NAVIGATE FIRST — before any store updates that would unmount this navigator
       navigation.navigate('GrandReadingLoading', { birthData })
-
-      // ✅ Save to DB and refresh store AFTER navigation (in background)
       const { error } = await saveBirthProfile(user.id, {
-        birth_date: birthDate,
-        birth_time: birthTime,
-        birth_time_known: timeKnown,
-        birth_city: selectedCity.city,
-        birth_country: selectedCity.country,
-        birth_lat: selectedCity.lat,
-        birth_lng: selectedCity.lng,
-        timezone,
+        birth_date: birthDate, birth_time: birthTime,
+        birth_time_known: timeKnown, birth_city: selectedCity.city,
+        birth_country: selectedCity.country, birth_lat: selectedCity.lat,
+        birth_lng: selectedCity.lng, timezone,
       })
-
       if (error) throw error
-
-      // This will trigger RootNavigator to switch to MainNavigator
-      // but by then user is already on GrandReadingLoading
       await refreshBirthProfile()
-
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Could not save your birth details')
       setLoading(false)
@@ -177,19 +133,39 @@ export function BirthDetailsScreen({ navigation }: Props) {
   }
 
   return (
-    <ScreenWrapper>
+    <View style={styles.root}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      <Video
+        source={require('../../../assets/videos/birth-bg.mp4')}
+        style={StyleSheet.absoluteFillObject}
+        resizeMode={ResizeMode.COVER}
+        isLooping
+        shouldPlay
+        isMuted
+      />
+      <LinearGradient
+        colors={['rgba(5,5,15,0.5)', 'rgba(5,5,15,0.9)']}
+        style={StyleSheet.absoluteFillObject}
+      />
+
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.heading}>The Sacred Coordinates</Text>
-        <Text style={styles.subheading}>
-          Tell us the exact moment your soul arrived. The more precise, the deeper we can read.
-        </Text>
+        {/* Header */}
+        <View style={styles.headerArea}>
+          <View style={styles.glowDot} />
+          <Text style={styles.step}>SETUP · STEP 1 OF 1</Text>
+          <Text style={styles.heading}>The Sacred{'\n'}Coordinates</Text>
+          <Text style={styles.subheading}>
+            Tell us the exact moment your soul arrived.
+            The more precise, the deeper we can read.
+          </Text>
+        </View>
 
-        {/* Date */}
-        <View style={styles.section}>
+        {/* Date Section */}
+        <BlurView intensity={20} tint="dark" style={styles.section}>
           <Text style={styles.sectionLabel}>Date of Birth</Text>
           <View style={styles.wheelRow}>
             <View style={styles.wheelCol}>
@@ -205,12 +181,18 @@ export function BirthDetailsScreen({ navigation }: Props) {
               <WheelPicker data={YEARS} selectedIndex={yearIndex} onSelect={setYearIndex} width={80} />
             </View>
           </View>
-        </View>
+        </BlurView>
 
-        {/* Time */}
-        <View style={styles.section}>
+        {/* Time Section */}
+        <BlurView intensity={20} tint="dark" style={styles.section}>
           <Text style={styles.sectionLabel}>Time of Birth</Text>
-          <TouchableOpacity style={styles.checkRow} onPress={() => setTimeKnown(!timeKnown)}>
+          <TouchableOpacity
+            style={styles.checkRow}
+            onPress={() => {
+              setTimeKnown(!timeKnown)
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+            }}
+          >
             <View style={[styles.checkbox, timeKnown && styles.checkboxActive]}>
               {timeKnown && <Text style={styles.checkmark}>✓</Text>}
             </View>
@@ -247,102 +229,174 @@ export function BirthDetailsScreen({ navigation }: Props) {
                 </View>
               </View>
               <Text style={styles.timeNote}>
-                Time determines your Rising Sign — the most personal part of your chart.
+                Your Rising Sign — the most personal part of your chart — requires exact birth time.
               </Text>
             </>
           ) : (
-            <Text style={styles.unknownTimeNote}>
-              We will use 6:00 AM as your default birth time. Your Sun and Moon signs will still be accurate. Rising sign may vary slightly.
-            </Text>
+            <View style={styles.unknownTimeCard}>
+              <Text style={styles.unknownTimeText}>
+                We will use 6:00 AM as your default. Sun and Moon signs remain perfectly accurate. Rising sign may vary slightly.
+              </Text>
+            </View>
           )}
-        </View>
+        </BlurView>
 
-        {/* Place */}
-        <View style={styles.section}>
+        {/* Place of Birth — Opens City Modal (no keyboard issue!) */}
+        <BlurView intensity={20} tint="dark" style={styles.section}>
           <Text style={styles.sectionLabel}>Place of Birth</Text>
-          <Input
-            label="City"
-            placeholder="Type your birth city..."
-            value={cityQuery}
-            onChangeText={handleCityInput}
-            autoCapitalize="words"
-          />
 
-          {citySearching && (
-            <ActivityIndicator color={Colors.starGold} style={{ marginTop: 8 }} />
-          )}
+          <TouchableOpacity
+            style={styles.cityPickerBtn}
+            onPress={() => setShowCityModal(true)}
+          >
+            {selectedCity ? (
+              <View>
+                <Text style={styles.citySelected}>
+                  {selectedCity.city}, {selectedCity.country}
+                </Text>
+                <Text style={styles.cityCoords}>
+                  {selectedCity.lat.toFixed(4)}°, {selectedCity.lng.toFixed(4)}°
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.cityPlaceholder}>Tap to search your birth city...</Text>
+            )}
+            <Text style={styles.cityChevron}>{selectedCity ? '✓' : '→'}</Text>
+          </TouchableOpacity>
+        </BlurView>
 
-          {selectedCity && (
-            <View style={styles.selectedCity}>
-              <Text style={styles.selectedCityText}>
-                {selectedCity.city}, {selectedCity.country}
-              </Text>
-              <Text style={styles.selectedCityCoords}>
-                {selectedCity.lat.toFixed(4)}, {selectedCity.lng.toFixed(4)}
-              </Text>
-            </View>
-          )}
-
-          {cityResults.length > 0 && !selectedCity && (
-            <View style={styles.cityList}>
-              {cityResults.map((item, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.cityItem}
-                  onPress={() => {
-                    setSelectedCity(item)
-                    setCityQuery(`${item.city}, ${item.country}`)
-                    setCityResults([])
-                  }}
-                >
-                  <Text style={styles.cityItemMain}>{item.city}</Text>
-                  <Text style={styles.cityItemSub}>{item.country}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
-
-        <Button
-          label="Reveal My Cosmos"
+        {/* Submit */}
+        <TouchableOpacity
+          style={[styles.revealBtn, loading && { opacity: 0.6 }]}
           onPress={handleSubmit}
-          loading={loading}
-          style={styles.submitButton}
-        />
+          disabled={loading}
+        >
+          <LinearGradient
+            colors={['#C9A84C', '#7C3AED']}
+            style={styles.revealBtnGrad}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <Text style={styles.revealBtnText}>
+              {loading ? 'Calculating Your Chart...' : 'Reveal My Cosmos ✦'}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </ScrollView>
-    </ScreenWrapper>
+
+      {/* CITY SEARCH MODAL — fixes keyboard hiding issue completely */}
+      <Modal visible={showCityModal} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalOverlay}>
+            <BlurView intensity={40} tint="dark" style={styles.modalCard}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.modalTitle}>Search Birth City</Text>
+
+              <TextInput
+                style={styles.citySearchInput}
+                value={cityQuery}
+                onChangeText={handleCityInput}
+                placeholder="Type city name..."
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                autoFocus
+                returnKeyType="search"
+              />
+
+              {citySearching && (
+                <ActivityIndicator color="#C9A84C" style={{ marginVertical: 16 }} />
+              )}
+
+              <FlatList
+                data={cityResults}
+                keyExtractor={(_, i) => String(i)}
+                showsVerticalScrollIndicator={false}
+                style={{ maxHeight: height * 0.45 }}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.cityResultRow}
+                    onPress={() => {
+                      setSelectedCity(item)
+                      setCityQuery(`${item.city}, ${item.country}`)
+                      setCityResults([])
+                      setShowCityModal(false)
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                    }}
+                  >
+                    <View style={styles.cityResultPin}>
+                      <Text style={{ fontSize: 18 }}>📍</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.cityResultMain}>{item.city}</Text>
+                      <Text style={styles.cityResultSub}>{item.country}</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+              />
+
+              <TouchableOpacity
+                style={styles.closeModal}
+                onPress={() => { setShowCityModal(false); setCityResults([]) }}
+              >
+                <Text style={styles.closeModalText}>Cancel</Text>
+              </TouchableOpacity>
+            </BlurView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  scroll: {
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 48,
+  root: { flex: 1, backgroundColor: '#05050F' },
+  scroll: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 48 },
+  headerArea: { alignItems: 'center', marginBottom: 28 },
+  glowDot: {
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: '#C9A84C',
+    shadowColor: '#C9A84C', shadowRadius: 12, shadowOpacity: 1,
+    shadowOffset: { width: 0, height: 0 },
+    marginBottom: 12,
+  },
+  step: {
+    fontFamily: Fonts.accent,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.3)',
+    letterSpacing: 2,
+    marginBottom: 8,
   },
   heading: {
     fontFamily: Fonts.heading,
-    fontSize: 22,
-    color: Colors.starGold,
-    marginBottom: 10,
+    fontSize: 38,
+    color: '#FFFFFF',
     textAlign: 'center',
+    lineHeight: 46,
+    marginBottom: 12,
   },
   subheading: {
     fontFamily: Fonts.body,
     fontSize: 14,
-    color: Colors.textMuted,
+    color: 'rgba(255,255,255,0.5)',
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 32,
   },
   section: {
-    marginBottom: 28,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+    padding: 20,
+    marginBottom: 16,
   },
   sectionLabel: {
     fontFamily: Fonts.accent,
-    fontSize: 11,
-    color: Colors.textMuted,
-    letterSpacing: 2,
+    fontSize: 10,
+    color: '#C9A84C',
+    letterSpacing: 2.5,
     textTransform: 'uppercase',
     marginBottom: 16,
   },
@@ -350,20 +404,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 12,
-    backgroundColor: Colors.cardBg,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    padding: 16,
   },
-  wheelCol: {
-    alignItems: 'center',
-    gap: 8,
-  },
+  wheelCol: { alignItems: 'center', gap: 8 },
   wheelLabel: {
     fontFamily: Fonts.accent,
     fontSize: 10,
-    color: Colors.textMuted,
+    color: 'rgba(255,255,255,0.3)',
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
@@ -374,122 +420,150 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    backgroundColor: Colors.inputBg,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 24, height: 24, borderRadius: 7,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    alignItems: 'center', justifyContent: 'center',
   },
   checkboxActive: {
-    backgroundColor: Colors.primaryViolet,
-    borderColor: Colors.primaryViolet,
+    backgroundColor: '#C9A84C',
+    borderColor: '#C9A84C',
   },
-  checkmark: {
-    color: Colors.moonWhite,
-    fontSize: 12,
-    fontFamily: Fonts.bodySemiBold,
-  },
+  checkmark: { color: '#0A0600', fontSize: 14, fontFamily: Fonts.bodySemiBold },
   checkLabel: {
     fontFamily: Fonts.body,
-    fontSize: 14,
-    color: Colors.textSecondary,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.7)',
   },
   ampmToggle: {
     flexDirection: 'row',
-    backgroundColor: Colors.inputBg,
-    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: Colors.cardBorder,
+    borderColor: 'rgba(255,255,255,0.1)',
     overflow: 'hidden',
     height: 52,
   },
-  ampmTab: {
-    width: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ampmActive: {
-    backgroundColor: Colors.primaryViolet,
-  },
-  ampmText: {
-    fontFamily: Fonts.accent,
-    fontSize: 12,
-    color: Colors.textMuted,
-  },
-  ampmTextActive: {
-    color: Colors.moonWhite,
-  },
+  ampmTab: { width: 44, alignItems: 'center', justifyContent: 'center' },
+  ampmActive: { backgroundColor: '#7C3AED' },
+  ampmText: { fontFamily: Fonts.accent, fontSize: 12, color: 'rgba(255,255,255,0.4)' },
+  ampmTextActive: { color: '#FFFFFF' },
   timeNote: {
     fontFamily: Fonts.body,
     fontSize: 12,
-    color: Colors.textMuted,
+    color: 'rgba(255,255,255,0.35)',
     marginTop: 12,
     lineHeight: 18,
+    textAlign: 'center',
   },
-  unknownTimeNote: {
+  unknownTimeCard: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  unknownTimeText: {
     fontFamily: Fonts.body,
     fontSize: 13,
-    color: Colors.textMuted,
+    color: 'rgba(255,255,255,0.45)',
     lineHeight: 20,
-    backgroundColor: Colors.cardBg,
-    borderRadius: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
   },
-  selectedCity: {
-    backgroundColor: Colors.cardBg,
-    borderRadius: 10,
+  cityPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: Colors.jupiterGreen + '60',
-    padding: 14,
-    marginTop: -8,
-    marginBottom: 4,
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
   },
-  selectedCityText: {
+  citySelected: {
     fontFamily: Fonts.bodySemiBold,
-    fontSize: 15,
-    color: Colors.jupiterGreen,
+    fontSize: 16,
+    color: '#C9A84C',
   },
-  selectedCityCoords: {
+  cityCoords: {
     fontFamily: Fonts.body,
     fontSize: 11,
-    color: Colors.textMuted,
+    color: 'rgba(255,255,255,0.3)',
     marginTop: 4,
   },
-  cityList: {
-    backgroundColor: Colors.cardBg,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    overflow: 'hidden',
-    marginTop: -8,
-  },
-  cityItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
-  },
-  cityItemMain: {
-    fontFamily: Fonts.bodySemiBold,
-    fontSize: 14,
-    color: Colors.textPrimary,
-    flex: 1,
-  },
-  cityItemSub: {
+  cityPlaceholder: {
     fontFamily: Fonts.body,
-    fontSize: 12,
-    color: Colors.textMuted,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.25)',
   },
-  submitButton: {
-    width: '100%',
-    marginTop: 8,
+  cityChevron: {
+    fontSize: 18,
+    color: selectedCity => selectedCity ? '#C9A84C' : 'rgba(255,255,255,0.3)',
   },
-})
+  revealBtn: { marginTop: 8, borderRadius: 20, overflow: 'hidden' },
+  revealBtnGrad: { paddingVertical: 22, alignItems: 'center' },
+  revealBtnText: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 18,
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    overflow: 'hidden',
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontFamily: Fonts.heading,
+    fontSize: 18,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  citySearchInput: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontFamily: Fonts.body,
+    fontSize: 15,
+    color: '#FFFFFF',
+    marginBottom: 12,
+  },
+  cityResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+    gap: 12,
+  },
+  cityResultPin: { width: 32, alignItems: 'center' },
+  cityResultMain: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 15,
+    color: '#FFFFFF',
+  },
+  cityResultSub: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.4)',
+    marginTop: 2,
+  },
