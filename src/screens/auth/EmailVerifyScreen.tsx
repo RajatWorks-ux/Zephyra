@@ -8,6 +8,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { RouteProp } from '@react-navigation/native'
 import { AuthStackParams } from '../../navigation/AuthNavigator'
 import { Fonts } from '../../constants/fonts'
+import { Videos } from '../../constants/videos'
 import { supabase } from '../../services/supabase'
 import { Video, ResizeMode } from 'expo-av'
 import { BlurView } from 'expo-blur'
@@ -127,7 +128,7 @@ export function EmailVerifyScreen({ navigation, route }: Props) {
     >
       <View style={styles.root}>
         <Video
-          source={require('../../../assets/videos/email-verify-bg.mp4')}
+          source={Videos.emailVerifyBg}
           style={StyleSheet.absoluteFillObject}
           resizeMode={ResizeMode.COVER}
           isLooping
@@ -335,3 +336,4 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.35)',
   },
 })
+  
