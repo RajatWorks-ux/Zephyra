@@ -5,7 +5,7 @@ import { RouteProp } from '@react-navigation/native'
 import { SetupStackParams } from '../../navigation/SetupNavigator'
 import { Colors } from '../../constants/colors'
 import { Fonts } from '../../constants/fonts'
-import { Videos } from '../../../constants/videos'
+import { Videos } from '../../constants/videos'
 import { Video, ResizeMode } from 'expo-av'
 import { LinearGradient } from 'expo-linear-gradient'
 
@@ -201,3 +201,4 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 })
+
