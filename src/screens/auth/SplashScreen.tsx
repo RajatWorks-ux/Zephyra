@@ -1,6 +1,6 @@
 // src/screens/auth/SplashScreen.tsx
-import React, { useEffect } from 'react'
-import { View, Text, StyleSheet, Dimensions } from 'react-native'
+import React, { useEffect, useRef } from 'react'
+import { View, Text, StyleSheet, Dimensions, Animated, Easing } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { AuthStackParams } from '../../navigation/AuthNavigator'
@@ -9,16 +9,6 @@ import { Fonts } from '../../constants/fonts'
 import { Videos } from '../../constants/videos'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Video, ResizeMode } from 'expo-av'
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withDelay,
-  withRepeat,
-  withSequence,
-  Easing,
-  interpolate,
-} from 'react-native-reanimated'
 
 const { width, height } = Dimensions.get('window')
 const APP_NAME = 'ZEPHYRA'
@@ -29,50 +19,70 @@ type Props = {
 }
 
 export function SplashScreen({ navigation }: Props) {
-  const letterAnims = letters.map(() => useSharedValue(0))
-  const taglineOpacity = useSharedValue(0)
-  const taglineY = useSharedValue(20)
-  const screenOpacity = useSharedValue(1)
-  const orbScale = useSharedValue(0.8)
-  const orbOpacity = useSharedValue(0)
-  const glowPulse = useSharedValue(0)
+  const letterAnims = useRef(letters.map(() => new Animated.Value(0))).current
+  const taglineOpacity = useRef(new Animated.Value(0)).current
+  const taglineY = useRef(new Animated.Value(20)).current
+  const screenOpacity = useRef(new Animated.Value(1)).current
+  const orbScale = useRef(new Animated.Value(0.8)).current
+  const orbOpacity = useRef(new Animated.Value(0)).current
+  const glowPulse = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
     // Orb appears first
-    orbOpacity.value = withTiming(1, { duration: 800 })
-    orbScale.value = withTiming(1, { duration: 1000, easing: Easing.out(Easing.cubic) })
-    
-    // Glow pulse loop
-    glowPulse.value = withDelay(500, withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2000 }),
-        withTiming(0, { duration: 2000 })
-      ),
-      -1,
-      false
-    ))
+    Animated.timing(orbOpacity, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: true,
+    }).start()
+
+    Animated.timing(orbScale, {
+      toValue: 1,
+      duration: 1000,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start()
+
+    // Glow pulse loop (starts after 500ms delay)
+    const glowTimeout = setTimeout(() => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowPulse, { toValue: 1, duration: 2000, useNativeDriver: true }),
+          Animated.timing(glowPulse, { toValue: 0, duration: 2000, useNativeDriver: true }),
+        ])
+      ).start()
+    }, 500)
 
     // Letters stagger in
     letters.forEach((_, i) => {
-      letterAnims[i].value = withDelay(
-        300 + i * 120,
-        withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) })
-      )
+      Animated.sequence([
+        Animated.delay(300 + i * 120),
+        Animated.timing(letterAnims[i], {
+          toValue: 1,
+          duration: 400,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start()
     })
 
     // Tagline fades in
-    taglineOpacity.value = withDelay(
-      300 + letters.length * 120 + 200,
-      withTiming(1, { duration: 700 })
-    )
-    taglineY.value = withDelay(
-      300 + letters.length * 120 + 200,
-      withTiming(0, { duration: 700, easing: Easing.out(Easing.cubic) })
-    )
+    const taglineDelay = 300 + letters.length * 120 + 200
+    Animated.sequence([
+      Animated.delay(taglineDelay),
+      Animated.parallel([
+        Animated.timing(taglineOpacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(taglineY, {
+          toValue: 0,
+          duration: 700,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start()
 
     // Navigate after animation
     const timer = setTimeout(async () => {
-      screenOpacity.value = withTiming(0, { duration: 600 })
+      Animated.timing(screenOpacity, { toValue: 0, duration: 600, useNativeDriver: true }).start()
       await new Promise(r => setTimeout(r, 650))
       const hasLaunched = await AsyncStorage.getItem('zephyra_has_launched')
       if (hasLaunched) {
@@ -83,25 +93,14 @@ export function SplashScreen({ navigation }: Props) {
       }
     }, 3200)
 
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      clearTimeout(glowTimeout)
+    }
   }, [])
 
-  const screenStyle = useAnimatedStyle(() => ({ opacity: screenOpacity.value }))
-  const orbStyle = useAnimatedStyle(() => ({
-    opacity: orbOpacity.value,
-    transform: [{ scale: orbScale.value }],
-  }))
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(glowPulse.value, [0, 1], [0.3, 0.8]),
-    transform: [{ scale: interpolate(glowPulse.value, [0, 1], [1, 1.15]) }],
-  }))
-  const taglineStyle = useAnimatedStyle(() => ({
-    opacity: taglineOpacity.value,
-    transform: [{ translateY: taglineY.value }],
-  }))
-
   return (
-    <Animated.View style={[styles.root, screenStyle]}>
+    <Animated.View style={[styles.root, { opacity: screenOpacity }]}>
       {/* Video Background */}
       <Video
         source={Videos.splashBg}
@@ -111,7 +110,7 @@ export function SplashScreen({ navigation }: Props) {
         shouldPlay
         isMuted
       />
-      
+
       {/* Overlay gradient */}
       <LinearGradient
         colors={['rgba(5,5,15,0.3)', 'rgba(5,5,15,0.5)', 'rgba(5,5,15,0.7)']}
@@ -120,8 +119,20 @@ export function SplashScreen({ navigation }: Props) {
 
       <View style={styles.center}>
         {/* Glowing orb behind text */}
-        <Animated.View style={[styles.glowRing, glowStyle]} />
-        <Animated.View style={[styles.orb, orbStyle]}>
+        <Animated.View
+          style={[
+            styles.glowRing,
+            {
+              opacity: glowPulse.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.8] }),
+              transform: [{
+                scale: glowPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] }),
+              }],
+            },
+          ]}
+        />
+        <Animated.View
+          style={[styles.orb, { opacity: orbOpacity, transform: [{ scale: orbScale }] }]}
+        >
           <LinearGradient
             colors={['#C9A84C', '#7C3AED', '#C9A84C']}
             style={styles.orbGradient}
@@ -132,26 +143,34 @@ export function SplashScreen({ navigation }: Props) {
 
         {/* Animated letters */}
         <View style={styles.nameRow}>
-          {letters.map((letter, i) => {
-            const animStyle = useAnimatedStyle(() => ({
-              opacity: letterAnims[i].value,
-              transform: [{
-                translateY: interpolate(letterAnims[i].value, [0, 1], [30, 0])
-              }]
-            }))
-            return (
-              <Animated.Text key={i} style={[styles.letter, animStyle]}>
-                {letter}
-              </Animated.Text>
-            )
-          })}
+          {letters.map((letter, i) => (
+            <Animated.Text
+              key={i}
+              style={[
+                styles.letter,
+                {
+                  opacity: letterAnims[i],
+                  transform: [{
+                    translateY: letterAnims[i].interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [30, 0],
+                    }),
+                  }],
+                },
+              ]}
+            >
+              {letter}
+            </Animated.Text>
+          ))}
         </View>
 
         {/* Decorative line */}
         <View style={styles.decorLine} />
 
         {/* Tagline */}
-        <Animated.Text style={[styles.tagline, taglineStyle]}>
+        <Animated.Text
+          style={[styles.tagline, { opacity: taglineOpacity, transform: [{ translateY: taglineY }] }]}
+        >
           Every Star · Every System · Your Entire Life
         </Animated.Text>
       </View>
@@ -222,4 +241,3 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 })
-    
