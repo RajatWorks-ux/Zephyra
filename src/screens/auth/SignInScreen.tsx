@@ -16,9 +16,6 @@ import { Video, ResizeMode } from 'expo-av'
 import { BlurView } from 'expo-blur'
 import { LinearGradient } from 'expo-linear-gradient'
 import * as Haptics from 'expo-haptics'
-import Animated, {
-  useSharedValue, useAnimatedStyle, withSpring, withTiming,
-} from 'react-native-reanimated'
 
 WebBrowser.maybeCompleteAuthSession()
 
@@ -27,26 +24,23 @@ type Props = {
 }
 type Mode = 'signin' | 'signup'
 
-// Custom styled input for this screen
+// Border color derived from state — no animation library needed
 function GlassInput({
   label, placeholder, value, onChangeText, secureTextEntry = false,
   keyboardType = 'default', error, autoCapitalize = 'none',
 }: any) {
   const [focused, setFocused] = useState(false)
-  const borderAnim = useSharedValue(0)
 
-  const borderStyle = useAnimatedStyle(() => ({
-    borderColor: error
-      ? 'rgba(239,68,68,0.8)'
-      : focused
-      ? 'rgba(201,168,76,0.8)'
-      : 'rgba(255,255,255,0.1)',
-  }))
+  const borderColor = error
+    ? 'rgba(239,68,68,0.8)'
+    : focused
+    ? 'rgba(201,168,76,0.8)'
+    : 'rgba(255,255,255,0.1)'
 
   return (
     <View style={gi.wrap}>
       <Text style={gi.label}>{label}</Text>
-      <Animated.View style={[gi.inputWrap, borderStyle]}>
+      <View style={[gi.inputWrap, { borderColor }]}>
         <TextInput
           style={gi.input}
           placeholder={placeholder}
@@ -59,7 +53,7 @@ function GlassInput({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
         />
-      </Animated.View>
+      </View>
       {error ? <Text style={gi.error}>{error}</Text> : null}
     </View>
   )
@@ -141,7 +135,6 @@ export function SignInScreen({ navigation }: Props) {
         if (error) {
           Alert.alert('Sign Up Failed', error.message)
         } else {
-          // Navigate to email verify screen
           navigation.navigate('EmailVerify', { email: email.trim() })
         }
       } else {
@@ -193,9 +186,7 @@ export function SignInScreen({ navigation }: Props) {
           source={Videos.signInBg}
           style={StyleSheet.absoluteFillObject}
           resizeMode={ResizeMode.COVER}
-          isLooping
-          shouldPlay
-          isMuted
+          isLooping shouldPlay isMuted
         />
         <LinearGradient
           colors={['rgba(5,5,15,0.4)', 'rgba(5,5,15,0.85)']}
@@ -270,9 +261,16 @@ export function SignInScreen({ navigation }: Props) {
               {mode === 'signup' && password.length > 0 && (
                 <View style={styles.strengthRow}>
                   <View style={styles.strengthBar}>
-                    <View style={[styles.strengthFill, { width: strength.w as any, backgroundColor: strength.color }]} />
+                    <View
+                      style={[
+                        styles.strengthFill,
+                        { width: strength.w as any, backgroundColor: strength.color },
+                      ]}
+                    />
                   </View>
-                  <Text style={[styles.strengthLabel, { color: strength.color }]}>{strength.label}</Text>
+                  <Text style={[styles.strengthLabel, { color: strength.color }]}>
+                    {strength.label}
+                  </Text>
                 </View>
               )}
 
@@ -364,26 +362,9 @@ const styles = StyleSheet.create({
     elevation: 15,
     overflow: 'hidden',
   },
-  appName: {
-    fontFamily: Fonts.heading,
-    fontSize: 22,
-    color: '#C9A84C',
-    letterSpacing: 8,
-    marginBottom: 4,
-  },
-  appTagline: {
-    fontFamily: Fonts.body,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.35)',
-    letterSpacing: 0.5,
-  },
-  card: {
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    overflow: 'hidden',
-    padding: 24,
-  },
+  appName: { fontFamily: Fonts.heading, fontSize: 22, color: '#C9A84C', letterSpacing: 8, marginBottom: 4 },
+  appTagline: { fontFamily: Fonts.body, fontSize: 12, color: 'rgba(255,255,255,0.35)', letterSpacing: 0.5 },
+  card: { borderRadius: 28, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', overflow: 'hidden', padding: 24 },
   modeToggle: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -391,67 +372,23 @@ const styles = StyleSheet.create({
     padding: 4,
     marginBottom: 24,
   },
-  modeTab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 10,
-  },
+  modeTab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 10 },
   modeTabActive: { backgroundColor: '#7C3AED' },
-  modeTabText: {
-    fontFamily: Fonts.bodySemiBold,
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.4)',
-  },
+  modeTabText: { fontFamily: Fonts.bodySemiBold, fontSize: 14, color: 'rgba(255,255,255,0.4)' },
   modeTabTextActive: { color: '#FFFFFF' },
   form: { gap: 0 },
-  strengthRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: -8,
-    marginBottom: 14,
-  },
-  strengthBar: {
-    flex: 1,
-    height: 3,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
+  strengthRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -8, marginBottom: 14 },
+  strengthBar: { flex: 1, height: 3, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' },
   strengthFill: { height: '100%', borderRadius: 2 },
-  strengthLabel: {
-    fontFamily: Fonts.accent,
-    fontSize: 10,
-    letterSpacing: 1,
-    width: 40,
-  },
+  strengthLabel: { fontFamily: Fonts.accent, fontSize: 10, letterSpacing: 1, width: 40 },
   forgotLink: { alignSelf: 'flex-end', marginTop: -8, marginBottom: 16, paddingVertical: 4 },
-  forgotText: {
-    fontFamily: Fonts.body,
-    fontSize: 13,
-    color: '#C9A84C',
-  },
+  forgotText: { fontFamily: Fonts.body, fontSize: 13, color: '#C9A84C' },
   primaryBtn: { marginTop: 8, borderRadius: 16, overflow: 'hidden' },
   primaryBtnGrad: { paddingVertical: 18, alignItems: 'center', borderRadius: 16 },
-  primaryBtnText: {
-    fontFamily: Fonts.bodySemiBold,
-    fontSize: 17,
-    color: '#0A0600',
-    letterSpacing: 0.3,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginVertical: 24,
-  },
+  primaryBtnText: { fontFamily: Fonts.bodySemiBold, fontSize: 17, color: '#0A0600', letterSpacing: 0.3 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 24 },
   dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.08)' },
-  dividerText: {
-    fontFamily: Fonts.body,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.3)',
-  },
+  dividerText: { fontFamily: Fonts.body, fontSize: 12, color: 'rgba(255,255,255,0.3)' },
   socialRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   socialBtn: {
     flex: 1,
@@ -465,22 +402,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.12)',
     backgroundColor: 'rgba(255,255,255,0.05)',
   },
-  socialIcon: {
-    fontFamily: Fonts.bodySemiBold,
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
-  socialLabel: {
-    fontFamily: Fonts.bodySemiBold,
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
-  },
-  legal: {
-    fontFamily: Fonts.body,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.2)',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
+  socialIcon: { fontFamily: Fonts.bodySemiBold, fontSize: 16, color: '#FFFFFF' },
+  socialLabel: { fontFamily: Fonts.bodySemiBold, fontSize: 14, color: 'rgba(255,255,255,0.7)' },
+  legal: { fontFamily: Fonts.body, fontSize: 11, color: 'rgba(255,255,255,0.2)', textAlign: 'center', lineHeight: 18 },
 })
-          
