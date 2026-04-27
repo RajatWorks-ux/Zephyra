@@ -4,6 +4,8 @@ import {
   View,
   Text,
   StyleSheet,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native'
 import { Colors } from '../../constants/colors'
 import { Fonts } from '../../constants/fonts'
@@ -27,25 +29,32 @@ export function WheelPicker({
   const scrollRef = useRef<ScrollView>(null)
 
   useEffect(() => {
-    // Scroll to selected item on mount
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       scrollRef.current?.scrollTo({
         y: selectedIndex * ITEM_HEIGHT,
         animated: false,
       })
-    }, 100)
+    }, 150)
+    return () => clearTimeout(timer)
   }, [])
 
-  function handleScrollEnd(e: any) {
-    const offsetY = e.nativeEvent.contentOffset.y
+  function snapToIndex(offsetY: number) {
     const index = Math.round(offsetY / ITEM_HEIGHT)
     const clamped = Math.max(0, Math.min(index, data.length - 1))
+    scrollRef.current?.scrollTo({ y: clamped * ITEM_HEIGHT, animated: true })
     onSelect(clamped)
+  }
+
+  function handleMomentumScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    snapToIndex(e.nativeEvent.contentOffset.y)
+  }
+
+  function handleScrollEndDrag(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    snapToIndex(e.nativeEvent.contentOffset.y)
   }
 
   return (
     <View style={[styles.container, { width }]}>
-      {/* Top fade overlay */}
       <View style={styles.fadeTop} pointerEvents="none" />
 
       <ScrollView
@@ -53,7 +62,10 @@ export function WheelPicker({
         showsVerticalScrollIndicator={false}
         snapToInterval={ITEM_HEIGHT}
         decelerationRate="fast"
-        onMomentumScrollEnd={handleScrollEnd}
+        nestedScrollEnabled={true}
+        scrollEventThrottle={16}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        onScrollEndDrag={handleScrollEndDrag}
         contentContainerStyle={{
           paddingVertical: ITEM_HEIGHT * Math.floor(VISIBLE_COUNT / 2),
         }}
@@ -72,10 +84,7 @@ export function WheelPicker({
         ))}
       </ScrollView>
 
-      {/* Bottom fade overlay */}
       <View style={styles.fadeBottom} pointerEvents="none" />
-
-      {/* Center selection indicator */}
       <View style={styles.centerLine} pointerEvents="none" />
     </View>
   )
