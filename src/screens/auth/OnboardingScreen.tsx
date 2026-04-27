@@ -1,8 +1,9 @@
+
 // src/screens/auth/OnboardingScreen.tsx
 import React, { useRef, useState, useEffect } from 'react'
 import {
   View, Text, StyleSheet, FlatList, Dimensions,
-  TouchableOpacity, StatusBar,
+  TouchableOpacity, StatusBar, Animated,
 } from 'react-native'
 import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { AuthStackParams } from '../../navigation/AuthNavigator'
@@ -12,15 +13,6 @@ import { Videos } from '../../constants/videos'
 import { Video, ResizeMode } from 'expo-av'
 import { LinearGradient } from 'expo-linear-gradient'
 import * as Haptics from 'expo-haptics'
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  interpolate,
-  Easing,
-} from 'react-native-reanimated'
-import { GestureDetector, Gesture } from 'react-native-gesture-handler'
 
 const { width, height } = Dimensions.get('window')
 
@@ -64,27 +56,25 @@ function SlideItem({
   index: number
   activeIndex: number
 }) {
-  const opacity = useSharedValue(0)
-  const translateY = useSharedValue(30)
+  const opacity = useRef(new Animated.Value(index === 0 ? 1 : 0)).current
+  const translateY = useRef(new Animated.Value(index === 0 ? 0 : 30)).current
 
   useEffect(() => {
     if (activeIndex === index) {
-      opacity.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) })
-      translateY.value = withTiming(0, { duration: 500, easing: Easing.out(Easing.cubic) })
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: 0, duration: 500, useNativeDriver: true }),
+      ]).start()
     } else {
-      opacity.value = withTiming(0, { duration: 200 })
-      translateY.value = withTiming(30, { duration: 200 })
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: 30, duration: 200, useNativeDriver: true }),
+      ]).start()
     }
   }, [activeIndex])
 
-  const textStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
-  }))
-
   return (
     <View style={styles.slide}>
-      {/* Video Background per slide */}
       <Video
         source={item.video}
         style={StyleSheet.absoluteFillObject}
@@ -98,9 +88,7 @@ function SlideItem({
         locations={[0, 0.4, 1]}
         style={StyleSheet.absoluteFillObject}
       />
-
-      {/* Text content at bottom */}
-      <Animated.View style={[styles.textBlock, textStyle]}>
+      <Animated.View style={[styles.textBlock, { opacity, transform: [{ translateY }] }]}>
         <View style={[styles.tagPill, { borderColor: item.accent + '60' }]}>
           <Text style={[styles.tagText, { color: item.accent }]}>{item.tag}</Text>
         </View>
@@ -140,7 +128,6 @@ export function OnboardingScreen({ navigation }: Props) {
   return (
     <View style={styles.root}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
-
       <FlatList
         ref={flatListRef}
         data={slides}
@@ -154,10 +141,7 @@ export function OnboardingScreen({ navigation }: Props) {
           <SlideItem item={item} index={index} activeIndex={currentIndex} />
         )}
       />
-
-      {/* Bottom controls */}
       <View style={styles.controls}>
-        {/* Dots */}
         <View style={styles.dotsRow}>
           {slides.map((_, i) => {
             const active = i === currentIndex
@@ -179,8 +163,6 @@ export function OnboardingScreen({ navigation }: Props) {
             )
           })}
         </View>
-
-        {/* Buttons */}
         <View style={styles.buttonRow}>
           {!isLast && (
             <TouchableOpacity style={styles.skipBtn} onPress={handleSkip}>
@@ -188,15 +170,10 @@ export function OnboardingScreen({ navigation }: Props) {
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            style={[
-              styles.nextBtn,
-              { backgroundColor: slides[currentIndex].accent, flex: isLast ? 1 : 0 }
-            ]}
+            style={[styles.nextBtn, { backgroundColor: slides[currentIndex].accent, flex: isLast ? 1 : 0 }]}
             onPress={handleNext}
           >
-            <Text style={styles.nextText}>
-              {isLast ? 'Begin My Journey' : 'Next'}
-            </Text>
+            <Text style={styles.nextText}>{isLast ? 'Begin My Journey' : 'Next'}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -222,11 +199,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginBottom: 16,
   },
-  tagText: {
-    fontFamily: Fonts.accent,
-    fontSize: 10,
-    letterSpacing: 2,
-  },
+  tagText: { fontFamily: Fonts.accent, fontSize: 10, letterSpacing: 2 },
   slideTitle: {
     fontFamily: Fonts.heading,
     fontSize: 42,
@@ -260,17 +233,8 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 20,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-  },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.2)' },
+  buttonRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   skipBtn: {
     paddingHorizontal: 20,
     paddingVertical: 16,
@@ -278,11 +242,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)',
   },
-  skipText: {
-    fontFamily: Fonts.bodySemiBold,
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.5)',
-  },
+  skipText: { fontFamily: Fonts.bodySemiBold, fontSize: 15, color: 'rgba(255,255,255,0.5)' },
   nextBtn: {
     flex: 1,
     paddingVertical: 18,
@@ -293,11 +253,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 10,
   },
-  nextText: {
-    fontFamily: Fonts.bodySemiBold,
-    fontSize: 17,
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
+  nextText: { fontFamily: Fonts.bodySemiBold, fontSize: 17, color: '#FFFFFF', letterSpacing: 0.5 },
 })
-        
