@@ -8,6 +8,7 @@ import {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { AuthStackParams } from '../../navigation/AuthNavigator'
 import { Fonts } from '../../constants/fonts'
+import { Videos } from '../../constants/videos'
 import { supabase } from '../../services/supabase'
 import { Video, ResizeMode } from 'expo-av'
 import { BlurView } from 'expo-blur'
@@ -123,7 +124,7 @@ export function PhoneOTPScreen({ navigation }: Props) {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       <View style={styles.root}>
         <Video
-          source={require('../../../assets/videos/phone-bg.mp4')}
+          source={Videos.phoneOtpBg}
           style={StyleSheet.absoluteFillObject}
           resizeMode={ResizeMode.COVER}
           isLooping
@@ -428,3 +429,4 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
   },
 })
+                  
