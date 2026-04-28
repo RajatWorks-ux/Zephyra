@@ -154,25 +154,63 @@ export function SignInScreen({ navigation }: Props) {
   // ─── FIXED: Google OAuth ───────────────────────────────────────────────────
   async function handleGoogle() {
     try {
-      const redirectTo = 'zephyra://auth/callback'
+      // In Expo Go this becomes exp://192.168.1.2:8081
+      // In your built app this becomes zephyra://auth/callback
+      const redirectTo = AuthSession.makeRedirectUri()
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo, skipBrowserRedirect: true },
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
       })
 
       if (error || !data.url) {
-        Alert.alert('Google Sign In Failed', error?.message || 'No URL')
+        Alert.alert('Google Sign In Failed', error?.message || 'Unknown error')
         return
       }
 
+      // Listen for the redirect BEFORE opening the browser
+      const subscription = Linking.addEventListener('url', async ({ url }) => {
+        subscription.remove()
+        WebBrowser.dismissBrowser()
+
+        const { params } = Linking.parse(url)
+
+        if (params?.code) {
+          const { error: sessionError } = await supabase.auth.exchangeCodeForSession(
+            String(params.code)
+          )
+          if (sessionError) Alert.alert('Sign In Error', sessionError.message)
+        } else if (params?.access_token && params?.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: String(params.access_token),
+            refresh_token: String(params.refresh_token),
+          })
+        }
+      })
+
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo)
 
-      if (result.type === 'success') {
+      // Fallback if Linking event didn't fire (some Android versions)
+      if (result.type === 'success' && result.url) {
+        subscription.remove()
         const { params } = Linking.parse(result.url)
         if (params?.code) {
           await supabase.auth.exchangeCodeForSession(String(params.code))
+        } else if (params?.access_token && params?.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: String(params.access_token),
+            refresh_token: String(params.refresh_token),
+          })
         }
+      } else {
+        subscription.remove()
       }
     } catch (e: any) {
       Alert.alert('Error', e.message)
@@ -413,4 +451,3 @@ const styles = StyleSheet.create({
   socialLabel: { fontFamily: Fonts.bodySemiBold, fontSize: 14, color: 'rgba(255,255,255,0.7)' },
   legal: { fontFamily: Fonts.body, fontSize: 11, color: 'rgba(255,255,255,0.2)', textAlign: 'center', lineHeight: 18 },
 })
-    
