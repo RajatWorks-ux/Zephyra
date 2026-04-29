@@ -1,36 +1,25 @@
-// src/screens/auth/PasswordResetScreen.tsx
+// src/screens/auth/ForgotPasswordScreen.tsx
 import React, { useState, useRef, useEffect } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform,
-  Alert, Animated, Easing, StatusBar, ActivityIndicator,
+  Alert, Animated, StatusBar,
 } from 'react-native'
 import { NativeStackNavigationProp } from '@react-navigation/native-stack'
-import { RouteProp } from '@react-navigation/native'
 import { AuthStackParams } from '../../navigation/AuthNavigator'
 import { Fonts } from '../../constants/fonts'
 import { Videos } from '../../constants/videos'
 import { supabase } from '../../services/supabase'
 import { Video, ResizeMode } from 'expo-av'
 import { LinearGradient } from 'expo-linear-gradient'
-import { BlurView } from 'expo-blur'
+import * as Linking from 'expo-linking'
 import * as Haptics from 'expo-haptics'
 
 type Props = {
-  navigation: NativeStackNavigationProp<AuthStackParams, 'PasswordReset'>
-  route: RouteProp<AuthStackParams, 'PasswordReset'>
+  navigation: NativeStackNavigationProp<AuthStackParams, 'ForgotPassword'>
 }
 
-function GlassInput({
-  label, placeholder, value, onChangeText, secureTextEntry = false, error,
-}: {
-  label: string
-  placeholder: string
-  value: string
-  onChangeText: (t: string) => void
-  secureTextEntry?: boolean
-  error?: string
-}) {
+function GlassInput({ label, placeholder, value, onChangeText, keyboardType = 'default', error }: any) {
   const [focused, setFocused] = useState(false)
   const borderColor = error
     ? 'rgba(239,68,68,0.8)'
@@ -47,7 +36,7 @@ function GlassInput({
           placeholderTextColor="rgba(255,255,255,0.25)"
           value={value}
           onChangeText={onChangeText}
-          secureTextEntry={secureTextEntry}
+          keyboardType={keyboardType}
           autoCapitalize="none"
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
@@ -68,134 +57,72 @@ const gi = StyleSheet.create({
     marginBottom: 8,
     textTransform: 'uppercase',
   },
-  inputWrap: {
-    borderWidth: 1,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-  },
-  input: {
-    fontFamily: Fonts.body,
-    fontSize: 15,
-    color: '#FFFFFF',
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-  },
-  error: {
-    fontFamily: Fonts.body,
-    fontSize: 12,
-    color: 'rgba(239,68,68,0.9)',
-    marginTop: 6,
-  },
+  inputWrap: { borderWidth: 1, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.06)' },
+  input: { fontFamily: Fonts.body, fontSize: 15, color: '#FFFFFF', paddingHorizontal: 18, paddingVertical: 16 },
+  error: { fontFamily: Fonts.body, fontSize: 12, color: 'rgba(239,68,68,0.9)', marginTop: 6 },
 })
 
-// Three stages this screen can be in
-type Stage = 'verifying' | 'form' | 'expired' | 'done'
-
-export function PasswordResetScreen({ navigation, route }: Props) {
-  const { token_hash, type } = route.params ?? {}
-
-  const [stage, setStage] = useState<Stage>('verifying')
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
+export function ForgotPasswordScreen({ navigation }: Props) {
+  const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
-  const [errors, setErrors] = useState({ password: '', confirm: '' })
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState('')
 
-  // ── Shared animations ────────────────────────────────────────────────────
-  const fadeIn = useRef(new Animated.Value(0)).current
   const floatY = useRef(new Animated.Value(0)).current
   const glow = useRef(new Animated.Value(0.5)).current
-
-  // ── Success-specific animations ──────────────────────────────────────────
-  const checkScale = useRef(new Animated.Value(0)).current
-  const checkOpacity = useRef(new Animated.Value(0)).current
-  const ringScale = useRef(new Animated.Value(0.7)).current
-  const ringOpacity = useRef(new Animated.Value(0)).current
-  const successContent = useRef(new Animated.Value(30)).current
-  const successContentOpacity = useRef(new Animated.Value(0)).current
+  const fadeIn = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
-    Animated.timing(fadeIn, { toValue: 1, duration: 700, useNativeDriver: true }).start()
+    Animated.timing(fadeIn, { toValue: 1, duration: 800, useNativeDriver: true }).start()
 
     Animated.loop(
       Animated.sequence([
-        Animated.timing(floatY, { toValue: -10, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(floatY, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(floatY, { toValue: -10, duration: 2200, useNativeDriver: true }),
+        Animated.timing(floatY, { toValue: 0, duration: 2200, useNativeDriver: true }),
       ])
     ).start()
 
     Animated.loop(
       Animated.sequence([
         Animated.timing(glow, { toValue: 1, duration: 2000, useNativeDriver: true }),
-        Animated.timing(glow, { toValue: 0.3, duration: 2000, useNativeDriver: true }),
+        Animated.timing(glow, { toValue: 0.4, duration: 2000, useNativeDriver: true }),
       ])
     ).start()
-
-    // Exchange the token for a live session immediately when screen opens
-    establishSession()
   }, [])
 
-  async function establishSession() {
-    if (!token_hash || type !== 'recovery') {
-      setStage('expired')
+  async function handleReset() {
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Enter a valid email address')
       return
     }
-    const { error } = await supabase.auth.verifyOtp({
-      token_hash,
-      type: 'recovery',
-    })
-    if (error) {
-      setStage('expired')
-    } else {
-      setStage('form')
-    }
-  }
-
-  function runDoneAnimations() {
-    // Check icon bursts in
-    Animated.parallel([
-      Animated.spring(checkScale, { toValue: 1, friction: 4, tension: 80, useNativeDriver: true }),
-      Animated.timing(checkOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-    ]).start()
-
-    // Ring expands and fades
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(ringOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.timing(ringScale, { toValue: 2, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      ]),
-      Animated.timing(ringOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
-    ]).start()
-
-    // Success content slides up
-    Animated.parallel([
-      Animated.timing(successContentOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-      Animated.spring(successContent, { toValue: 0, friction: 8, tension: 60, useNativeDriver: true }),
-    ]).start()
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-  }
-
-  async function handleUpdate() {
-    const errs = { password: '', confirm: '' }
-    if (password.length < 8) errs.password = 'Password must be at least 8 characters'
-    if (password !== confirm) errs.confirm = 'Passwords do not match'
-    setErrors(errs)
-    if (errs.password || errs.confirm) return
-
+    setError('')
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
     setLoading(true)
-    const { error } = await supabase.auth.updateUser({ password })
+
+    // ── THE FIX ─────────────────────────────────────────────────────────────
+    // Linking.createURL('reset-password') auto-generates the correct URL:
+    //   Expo Go  → exp://192.168.1.2:8081/--/reset-password
+    //   Built APK → zephyra://reset-password
+    //
+    // Supabase emails the user a link. When clicked, Supabase verifies the
+    // token and redirects to this URL adding ?token_hash=XXX&type=recovery
+    // The NavigationContainer linking config (in App.tsx) intercepts that
+    // URL and opens PasswordResetScreen with those params automatically.
+    // ────────────────────────────────────────────────────────────────────────
+    const redirectTo = Linking.createURL('reset-password')
+
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+      email.trim(),
+      { redirectTo }
+    )
     setLoading(false)
 
-    if (error) {
-      Alert.alert('Error', error.message)
-      return
+    if (resetError) {
+      Alert.alert('Error', resetError.message)
+    } else {
+      setSent(true)
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
     }
-
-    // Sign out so user gets a clean session after the reset
-    await supabase.auth.signOut()
-    setStage('done')
-    runDoneAnimations()
   }
 
   return (
@@ -212,113 +139,42 @@ export function PasswordResetScreen({ navigation, route }: Props) {
           isLooping shouldPlay isMuted
         />
         <LinearGradient
-          colors={['rgba(5,5,15,0.35)', 'rgba(5,5,15,0.92)']}
+          colors={['rgba(5,5,15,0.4)', 'rgba(5,5,15,0.92)']}
           style={StyleSheet.absoluteFillObject}
         />
 
         <Animated.View style={[styles.container, { opacity: fadeIn }]}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Text style={styles.backText}>← Back</Text>
+          </TouchableOpacity>
 
-          {/* ── Visual area — icon changes per stage ── */}
           <View style={styles.visualArea}>
-            {/* Burst ring — only visible on 'done' */}
-            {stage === 'done' && (
-              <Animated.View
-                style={[styles.burstRing, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
-              />
-            )}
-
             <Animated.View style={[styles.glowCircle, { opacity: glow }]} />
-
-            <Animated.View
-              style={[
-                styles.iconWrap,
-                { transform: [{ translateY: floatY }] },
-                stage === 'done' && { opacity: checkOpacity, transform: [{ translateY: floatY }, { scale: checkScale }] },
-              ]}
-            >
-              <LinearGradient
-                colors={
-                  stage === 'expired'
-                    ? ['#EF4444', '#991B1B']
-                    : stage === 'done'
-                    ? ['#10B981', '#065F46']
-                    : ['#C9A84C', '#8B6914']
-                }
-                style={styles.iconGrad}
-              >
-                <Text style={styles.iconEmoji}>
-                  {stage === 'verifying' ? '🔒'
-                    : stage === 'form' ? '🔒'
-                    : stage === 'expired' ? '⚠'
-                    : '✓'}
-                </Text>
+            <Animated.View style={[styles.iconWrap, { transform: [{ translateY: floatY }] }]}>
+              <LinearGradient colors={['#C9A84C', '#8B6914']} style={styles.iconGrad}>
+                <Text style={styles.iconEmoji}>🔑</Text>
               </LinearGradient>
             </Animated.View>
           </View>
 
-          {/* ── STAGE: verifying ── */}
-          {stage === 'verifying' && (
-            <View style={styles.centeredState}>
-              <ActivityIndicator size="large" color="#C9A84C" style={{ marginBottom: 20 }} />
-              <Text style={styles.heading}>Verifying Link...</Text>
-              <Text style={styles.sub}>Checking your reset link, just a moment.</Text>
-            </View>
-          )}
-
-          {/* ── STAGE: expired ── */}
-          {stage === 'expired' && (
+          {!sent ? (
             <>
-              <Text style={styles.heading}>Link Expired</Text>
+              <Text style={styles.heading}>Reset Password</Text>
               <Text style={styles.sub}>
-                This reset link has expired or has already been used.{'\n'}
-                Please request a new one.
+                Enter the email linked to your account.{'\n'}We'll send you a secure reset link.
               </Text>
-              <TouchableOpacity
-                style={styles.btn}
-                onPress={() => navigation.navigate('ForgotPassword')}
-              >
-                <LinearGradient
-                  colors={['#C9A84C', '#B8860B']}
-                  style={styles.btnGrad}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <Text style={styles.btnText}>Request New Link</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* ── STAGE: form ── */}
-          {stage === 'form' && (
-            <>
-              <Text style={styles.heading}>New Password</Text>
-              <Text style={styles.sub}>
-                Create a strong password for your Zephyra account.
-              </Text>
-
               <GlassInput
-                label="New Password"
-                placeholder="Minimum 8 characters"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                error={errors.password}
+                label="Email Address"
+                placeholder="your@email.com"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                error={error}
               />
-              <GlassInput
-                label="Confirm Password"
-                placeholder="Repeat your password"
-                value={confirm}
-                onChangeText={setConfirm}
-                secureTextEntry
-                error={errors.confirm}
-              />
-
               <TouchableOpacity
-                style={[styles.btn, loading && styles.btnDisabled]}
-                onPress={handleUpdate}
+                style={[styles.btn, loading && { opacity: 0.6 }]}
+                onPress={handleReset}
                 disabled={loading}
-                activeOpacity={0.85}
               >
                 <LinearGradient
                   colors={['#C9A84C', '#B8860B']}
@@ -326,53 +182,33 @@ export function PasswordResetScreen({ navigation, route }: Props) {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 >
-                  <Text style={styles.btnText}>
-                    {loading ? 'Updating...' : 'Update Password'}
-                  </Text>
+                  <Text style={styles.btnText}>{loading ? 'Sending...' : 'Send Reset Link'}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={styles.heading}>Check Your Inbox</Text>
+              <Text style={styles.sub}>We sent a reset link to</Text>
+              <Text style={styles.emailHighlight}>{email}</Text>
+              <Text style={[styles.sub, { marginTop: 12 }]}>
+                Open the link in your email to set a new password.{'\n'}Check your spam folder too.
+              </Text>
+              <View style={styles.infoPill}>
+                <Text style={styles.infoPillText}>Link expires in 1 hour</Text>
+              </View>
+              <TouchableOpacity style={styles.btn} onPress={() => navigation.navigate('SignIn')}>
+                <LinearGradient
+                  colors={['#C9A84C', '#B8860B']}
+                  style={styles.btnGrad}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Text style={styles.btnText}>Back to Sign In</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </>
           )}
-
-          {/* ── STAGE: done ── */}
-          {stage === 'done' && (
-            <Animated.View
-              style={{ width: '100%', opacity: successContentOpacity, transform: [{ translateY: successContent }] }}
-            >
-              <Text style={styles.heading}>Password Changed!</Text>
-              <Text style={styles.sub}>
-                Your password has been updated successfully.{'\n'}
-                Your Zephyra account is now secure.
-              </Text>
-
-              {/* Success card */}
-              <BlurView intensity={18} tint="dark" style={styles.successCard}>
-                <Text style={styles.successLine}>✓  Password updated</Text>
-                <View style={styles.successDivider} />
-                <Text style={styles.successLine}>✓  Session refreshed</Text>
-                <View style={styles.successDivider} />
-                <Text style={styles.successLine}>✓  Account secured</Text>
-              </BlurView>
-
-              <TouchableOpacity
-                style={styles.btn}
-                onPress={() => navigation.navigate('SignIn')}
-                activeOpacity={0.85}
-              >
-                <LinearGradient
-                  colors={['#C9A84C', '#B8860B']}
-                  style={styles.btnGrad}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <Text style={styles.btnText}>Sign In</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-
-              <Text style={styles.footer}>Cosmic Intelligence · Since Your First Breath</Text>
-            </Animated.View>
-          )}
-
         </Animated.View>
       </View>
     </KeyboardAvoidingView>
@@ -381,34 +217,16 @@ export function PasswordResetScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#05050F' },
-  container: {
-    flex: 1,
-    paddingHorizontal: 28,
-    paddingTop: 72,
-  },
-  centeredState: { alignItems: 'center', paddingTop: 8 },
-
-  // Visual area
-  visualArea: {
-    height: 150,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 28,
-  },
-  burstRing: {
-    position: 'absolute',
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    borderWidth: 1.5,
-    borderColor: 'rgba(16,185,129,0.6)',
-  },
+  container: { flex: 1, paddingHorizontal: 28, paddingTop: 60 },
+  backBtn: { marginBottom: 24, alignSelf: 'flex-start' },
+  backText: { fontFamily: Fonts.body, fontSize: 15, color: 'rgba(255,255,255,0.5)' },
+  visualArea: { height: 140, alignItems: 'center', justifyContent: 'center', marginBottom: 28 },
   glowCircle: {
     position: 'absolute',
     width: 150,
     height: 150,
     borderRadius: 75,
-    backgroundColor: 'rgba(201,168,76,0.10)',
+    backgroundColor: 'rgba(201,168,76,0.12)',
     shadowColor: '#C9A84C',
     shadowRadius: 40,
     shadowOpacity: 1,
@@ -421,70 +239,24 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 15,
   },
-  iconGrad: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconEmoji: {
-    fontSize: 34,
-    color: '#FFFFFF',
-  },
-
-  heading: {
-    fontFamily: Fonts.heading,
-    fontSize: 28,
-    color: '#FFFFFF',
-    marginBottom: 12,
-    letterSpacing: 0.5,
-  },
-  sub: {
-    fontFamily: Fonts.body,
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.5)',
-    lineHeight: 24,
-    marginBottom: 24,
-  },
-
-  // Success card
-  successCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(16,185,129,0.2)',
-    overflow: 'hidden',
-    marginBottom: 28,
-    paddingVertical: 4,
-  },
-  successLine: {
-    fontFamily: Fonts.body,
-    fontSize: 13,
-    color: 'rgba(16,185,129,0.9)',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    letterSpacing: 0.5,
-  },
-  successDivider: {
-    height: 1,
-    backgroundColor: 'rgba(16,185,129,0.1)',
-    marginHorizontal: 16,
-  },
-
-  btn: { borderRadius: 16, overflow: 'hidden', marginBottom: 20 },
+  iconGrad: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
+  iconEmoji: { fontSize: 34 },
+  heading: { fontFamily: Fonts.heading, fontSize: 30, color: '#FFFFFF', marginBottom: 12, letterSpacing: 0.5 },
+  sub: { fontFamily: Fonts.body, fontSize: 15, color: 'rgba(255,255,255,0.5)', lineHeight: 24, marginBottom: 8 },
+  emailHighlight: { fontFamily: Fonts.bodySemiBold, fontSize: 16, color: '#C9A84C', marginBottom: 4 },
+  btn: { borderRadius: 16, overflow: 'hidden', marginTop: 8 },
   btnGrad: { paddingVertical: 20, alignItems: 'center' },
-  btnDisabled: { opacity: 0.6 },
-  btnText: {
-    fontFamily: Fonts.bodySemiBold,
-    fontSize: 17,
-    color: '#0A0600',
-    letterSpacing: 0.3,
+  btnText: { fontFamily: Fonts.bodySemiBold, fontSize: 17, color: '#0A0600', letterSpacing: 0.3 },
+  infoPill: {
+    backgroundColor: 'rgba(201,168,76,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.25)',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 28,
+    marginTop: 8,
   },
-  footer: {
-    fontFamily: Fonts.mystical,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.2)',
-    textAlign: 'center',
-    letterSpacing: 1,
-  },
+  infoPillText: { fontFamily: Fonts.body, fontSize: 13, color: '#C9A84C' },
 })
