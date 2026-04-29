@@ -7,6 +7,8 @@ import { SignInScreen } from '../screens/auth/SignInScreen'
 import { EmailVerifyScreen } from '../screens/auth/EmailVerifyScreen'
 import { PhoneOTPScreen } from '../screens/auth/PhoneOTPScreen'
 import { ForgotPasswordScreen } from '../screens/auth/ForgotPasswordScreen'
+import { PasswordResetScreen } from '../screens/auth/PasswordResetScreen'
+import { AccountCreatedScreen } from '../screens/auth/AccountCreatedScreen'
 
 export type AuthStackParams = {
   Splash: undefined
@@ -15,6 +17,9 @@ export type AuthStackParams = {
   EmailVerify: { email: string }
   PhoneOTP: { phone: string }
   ForgotPassword: undefined
+  // Opened via deep link from Supabase emails:
+  PasswordReset: { token_hash?: string; type?: string }
+  AccountCreated: { token_hash?: string; type?: string }
 }
 
 const Stack = createNativeStackNavigator<AuthStackParams>()
@@ -28,6 +33,8 @@ export function AuthNavigator() {
       <Stack.Screen name="EmailVerify" component={EmailVerifyScreen} />
       <Stack.Screen name="PhoneOTP" component={PhoneOTPScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+      <Stack.Screen name="PasswordReset" component={PasswordResetScreen} />
+      <Stack.Screen name="AccountCreated" component={AccountCreatedScreen} />
     </Stack.Navigator>
   )
 }
