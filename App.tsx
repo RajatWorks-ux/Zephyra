@@ -5,6 +5,7 @@ import { NavigationContainer } from '@react-navigation/native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import * as SplashScreen from 'expo-splash-screen'
+import * as Linking from 'expo-linking'
 import {
   useFonts,
   CinzelDecorative_400Regular,
@@ -24,6 +25,37 @@ import { RootNavigator } from './src/navigation/RootNavigator'
 import { useAuthStore } from './src/store/authStore'
 
 SplashScreen.preventAutoHideAsync()
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEEP LINK CONFIG
+//
+// Linking.createURL('/') automatically generates the right prefix:
+//   Expo Go  →  exp://192.168.1.2:8081/--
+//   Built APK → zephyra://
+//
+// When a user taps a link in their email, Supabase redirects to one of:
+//   exp://192.168.1.2:8081/--/reset-password?token_hash=XXX&type=recovery
+//   exp://192.168.1.2:8081/--/account-created?token_hash=XXX&type=signup
+//
+// NavigationContainer reads the URL, matches the path below, and opens
+// the correct screen — passing token_hash and type as route.params.
+// ─────────────────────────────────────────────────────────────────────────────
+const linking = {
+  prefixes: [
+    Linking.createURL('/'),
+    'zephyra://',
+  ],
+  config: {
+    screens: {
+      PasswordReset: {
+        path: 'reset-password',
+      },
+      AccountCreated: {
+        path: 'account-created',
+      },
+    },
+  },
+}
 
 export default function App() {
   const { initialize } = useAuthStore()
@@ -52,7 +84,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <NavigationContainer>
+        <NavigationContainer linking={linking}>
           <StatusBar style="light" />
           <RootNavigator />
         </NavigationContainer>
