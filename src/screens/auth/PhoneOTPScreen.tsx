@@ -197,7 +197,7 @@ export function PhoneOTPScreen({ navigation }: Props) {
             disabled={loading}
           >
             <LinearGradient
-              colors={['#00D4FF', '#0066FF']}
+              colors={['#C9A84C', '#B8860B']}
               style={styles.actionBtnGrad}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
@@ -334,25 +334,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: Fonts.heading,
     fontSize: 24,
-    color: '#00D4FF',
+    color: '#C9A84C',
   },
   otpBoxFilled: {
-    borderColor: '#00D4FF',
-    backgroundColor: 'rgba(0,212,255,0.08)',
+    borderColor: '#C9A84C',
+    backgroundColor: 'rgba(201,168,76,0.08)',
   },
   actionBtn: { borderRadius: 18, overflow: 'hidden' },
   actionBtnGrad: { paddingVertical: 20, alignItems: 'center' },
   actionBtnText: {
     fontFamily: Fonts.bodySemiBold,
     fontSize: 17,
-    color: '#FFFFFF',
+    color: '#0A0600',
     letterSpacing: 0.3,
   },
   resendBtn: { marginTop: 16, alignItems: 'center', paddingVertical: 8 },
   resendText: {
     fontFamily: Fonts.body,
     fontSize: 14,
-    color: '#00D4FF',
+    color: '#C9A84C',
     textDecorationLine: 'underline',
   },
   modalOverlay: {
@@ -429,4 +429,3 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
   },
 })
-                  
