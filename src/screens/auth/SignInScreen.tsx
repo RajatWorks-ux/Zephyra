@@ -131,7 +131,17 @@ export function SignInScreen({ navigation }: Props) {
         const { error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
-          options: { data: { full_name: name.trim() } },
+          options: {
+            data: { full_name: name.trim() },
+            // ── KEY FIX ───────────────────────────────────────────────────────
+            // This tells Supabase WHERE to redirect after email verification.
+            // {{ .ConfirmationURL }} in the email template will use this URL.
+            // Supabase goes HTTPS first (works in Gmail), then redirects here.
+            // In Expo Go:  exp://192.168.1.2:8081/--/account-created?code=XXX
+            // Built APK:   zephyra://account-created?code=XXX
+            // ─────────────────────────────────────────────────────────────────
+            emailRedirectTo: Linking.createURL('account-created'),
+          },
         })
         if (error) {
           Alert.alert('Sign Up Failed', error.message)
@@ -451,3 +461,4 @@ const styles = StyleSheet.create({
   socialLabel: { fontFamily: Fonts.bodySemiBold, fontSize: 14, color: 'rgba(255,255,255,0.7)' },
   legal: { fontFamily: Fonts.body, fontSize: 11, color: 'rgba(255,255,255,0.2)', textAlign: 'center', lineHeight: 18 },
 })
+              
