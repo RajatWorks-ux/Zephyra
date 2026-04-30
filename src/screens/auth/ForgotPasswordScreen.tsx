@@ -1,3 +1,4 @@
+
 // src/screens/auth/ForgotPasswordScreen.tsx
 import React, { useState, useRef, useEffect } from 'react'
 import {
@@ -99,16 +100,38 @@ export function ForgotPasswordScreen({ navigation }: Props) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
     setLoading(true)
 
-    // ── THE FIX ─────────────────────────────────────────────────────────────
-    // Linking.createURL('reset-password') auto-generates the correct URL:
-    //   Expo Go  → exp://192.168.1.2:8081/--/reset-password
-    //   Built APK → zephyra://reset-password
-    //
-    // Supabase emails the user a link. When clicked, Supabase verifies the
-    // token and redirects to this URL adding ?token_hash=XXX&type=recovery
-    // The NavigationContainer linking config (in App.tsx) intercepts that
-    // URL and opens PasswordResetScreen with those params automatically.
-    // ────────────────────────────────────────────────────────────────────────
+    // ── STEP 1: Check what auth method this email uses ───────────────────────
+    // We created this SQL function in Supabase.
+    // This prevents sending reset emails to Google/Phone users.
+    // ─────────────────────────────────────────────────────────────────────────
+    const { data: authMethod, error: rpcError } = await supabase.rpc(
+      'check_email_auth_method',
+      { p_email: email.trim() }
+    )
+
+    if (rpcError) {
+      // RPC call failed — don't block user, just proceed (fail-safe)
+      console.warn('check_email_auth_method RPC failed:', rpcError.message)
+    } else {
+      if (authMethod === 'not_found') {
+        setLoading(false)
+        setError('No Zephyra account found with this email. Please sign up first.')
+        return
+      }
+      if (authMethod === 'oauth:google') {
+        setLoading(false)
+        setError('This email is linked to Google Sign-In. Please tap "Google" on the login screen — no password needed.')
+        return
+      }
+      if (authMethod === 'phone') {
+        setLoading(false)
+        setError('This account uses phone number login. Please tap "Phone" on the login screen and enter your number.')
+        return
+      }
+      // authMethod === 'email' → proceed normally below
+    }
+
+    // ── STEP 2: Send the actual reset email (only for email accounts) ────────
     const redirectTo = Linking.createURL('reset-password')
 
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(
