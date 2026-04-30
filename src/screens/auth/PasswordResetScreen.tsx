@@ -92,7 +92,7 @@ const gi = StyleSheet.create({
 type Stage = 'verifying' | 'form' | 'expired' | 'done'
 
 export function PasswordResetScreen({ navigation, route }: Props) {
-  const { token_hash, type } = route.params ?? {}
+  const { code, token_hash, type } = route.params ?? {} as any
 
   const [stage, setStage] = useState<Stage>('verifying')
   const [password, setPassword] = useState('')
@@ -130,23 +130,37 @@ export function PasswordResetScreen({ navigation, route }: Props) {
       ])
     ).start()
 
-    // Exchange the token for a live session immediately when screen opens
+    // Exchange the token / code for a live session immediately when screen opens
     establishSession()
   }, [])
 
   async function establishSession() {
-    if (!token_hash || type !== 'recovery') {
+    const params = route.params ?? {} as any
+    const { code, token_hash, type } = params
+
+    try {
+      if (code) {
+        // ── PKCE flow from {{ .ConfirmationURL }} ──────────────────────────
+        // exchangeCodeForSession establishes a RECOVERY session automatically
+        const { error } = await supabase.auth.exchangeCodeForSession(String(code))
+        if (error) {
+          setStage('expired')
+          return
+        }
+        setStage('form')
+      } else if (token_hash && type === 'recovery') {
+        // ── Direct token_hash flow (fallback) ─────────────────────────────
+        const { error } = await supabase.auth.verifyOtp({ token_hash, type: 'recovery' })
+        if (error) {
+          setStage('expired')
+          return
+        }
+        setStage('form')
+      } else {
+        setStage('expired')
+      }
+    } catch (e) {
       setStage('expired')
-      return
-    }
-    const { error } = await supabase.auth.verifyOtp({
-      token_hash,
-      type: 'recovery',
-    })
-    if (error) {
-      setStage('expired')
-    } else {
-      setStage('form')
     }
   }
 
@@ -488,3 +502,4 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 })
+    
