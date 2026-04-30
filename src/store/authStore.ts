@@ -1,98 +1,166 @@
+
+// src/store/authStore.ts
 import { create } from 'zustand'
+import { Session } from '@supabase/supabase-js'
 import { supabase } from '../services/supabase'
-import type { Session, User } from '@supabase/supabase-js'
-import type { UserProfile, BirthProfile } from '../types'
+
+interface Profile {
+  display_name: string | null
+  avatar_url: string | null
+  auth_provider: string | null
+}
+
+interface BirthProfile {
+  id: string
+  user_id: string
+  birth_date: string | null
+  birth_time: string | null
+  birth_time_known: boolean
+  birth_city: string | null
+  birth_country: string | null
+  birth_lat: number | null
+  birth_lng: number | null
+  timezone: string | null
+  created_at: string
+}
 
 interface AuthState {
   session: Session | null
-  user: User | null
-  profile: UserProfile | null
+  profile: Profile | null
   birthProfile: BirthProfile | null
   isLoading: boolean
   isInitialized: boolean
-
-  setSession: (session: Session | null) => void
-  setProfile: (profile: UserProfile | null) => void
-  setBirthProfile: (birth: BirthProfile | null) => void
-  setLoading: (loading: boolean) => void
+  isPasswordRecovery: boolean
   initialize: () => Promise<void>
   signOut: () => Promise<void>
   refreshBirthProfile: () => Promise<void>
+  clearRecovery: () => void
 }
 
-// ── KEY FIX: extracted helper so both initialize and onAuthStateChange
-// load both profiles in a single parallel round-trip instead of two
-// sequential awaits. Keeps code DRY and reduces latency.
-async function loadProfiles(userId: string) {
-  const [{ data: profile }, { data: birth }] = await Promise.all([
-    supabase.from('profiles').select('*').eq('id', userId).single(),
-    supabase.from('birth_profiles').select('*').eq('user_id', userId).single(),
-  ])
-  return { profile: profile ?? null, birthProfile: birth ?? null }
+async function fetchProfile(userId: string): Promise<Profile | null> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('display_name, avatar_url, auth_provider')
+    .eq('id', userId)
+    .single()
+  return data
+}
+
+async function fetchBirthProfile(userId: string): Promise<BirthProfile | null> {
+  const { data } = await supabase
+    .from('birth_profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .single()
+  return data
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
-  user: null,
   profile: null,
   birthProfile: null,
   isLoading: true,
   isInitialized: false,
-
-  setSession: (session) =>
-    set({ session, user: session?.user ?? null }),
-
-  setProfile: (profile) => set({ profile }),
-
-  setBirthProfile: (birthProfile) => set({ birthProfile }),
-
-  setLoading: (isLoading) => set({ isLoading }),
+  isPasswordRecovery: false,
 
   initialize: async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      set({ session, user: session?.user ?? null })
+    // Check if user already had a session (e.g. app restarted)
+    const { data: { session } } = await supabase.auth.getSession()
 
-      if (session?.user) {
-        const { profile, birthProfile } = await loadProfiles(session.user.id)
-        set({ profile, birthProfile })
-      }
-    } catch (error) {
-      console.error('Auth init error:', error)
-    } finally {
-      set({ isLoading: false, isInitialized: true })
+    if (session) {
+      const [profile, birthProfile] = await Promise.all([
+        fetchProfile(session.user.id),
+        fetchBirthProfile(session.user.id),
+      ])
+      set({
+        session,
+        profile,
+        birthProfile,
+        isLoading: false,
+        isInitialized: true,
+        isPasswordRecovery: false,
+      })
+    } else {
+      set({
+        session: null,
+        profile: null,
+        birthProfile: null,
+        isLoading: false,
+        isInitialized: true,
+        isPasswordRecovery: false,
+      })
     }
 
-    // Listen for auth changes
+    // 🔑 THE MAIN FIX: Listen to ALL auth events and react correctly
     supabase.auth.onAuthStateChange(async (event, session) => {
-      // ── KEY FIX: show spinner while profiles load ──────────────────────
-      // Without this, RootNavigator sees session=true + birthProfile=null
-      // and briefly flashes the wrong screen before profiles finish loading.
-      // isInitialized stays true so the full app spinner doesn't show again.
-      set({ isLoading: true, session, user: session?.user ?? null })
 
-      if (session?.user) {
-        const { profile, birthProfile } = await loadProfiles(session.user.id)
-        set({ profile, birthProfile, isLoading: false })
-      } else {
-        set({ profile: null, birthProfile: null, isLoading: false })
+      // ────────────────────────────────────────────────────────────────
+      // PASSWORD_RECOVERY: User clicked the reset link from email.
+      // We MUST NOT navigate to the main app here.
+      // Set the flag so RootNavigator keeps showing AuthNavigator.
+      // PasswordResetScreen handles everything from here.
+      // ────────────────────────────────────────────────────────────────
+      if (event === 'PASSWORD_RECOVERY') {
+        set({
+          session,
+          isPasswordRecovery: true,
+          isLoading: false,
+        })
+        return
+      }
+
+      // ────────────────────────────────────────────────────────────────
+      // SIGNED_IN: Fires after Google OAuth, Phone OTP, email login,
+      // and exchangeCodeForSession. Fetch profile + birthProfile and
+      // let RootNavigator decide where to send the user.
+      // ────────────────────────────────────────────────────────────────
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (session) {
+          const [profile, birthProfile] = await Promise.all([
+            fetchProfile(session.user.id),
+            fetchBirthProfile(session.user.id),
+          ])
+          set({
+            session,
+            profile,
+            birthProfile,
+            isPasswordRecovery: false,
+            isLoading: false,
+          })
+        }
+        return
+      }
+
+      // ────────────────────────────────────────────────────────────────
+      // SIGNED_OUT: Clear everything. RootNavigator shows SignIn.
+      // ────────────────────────────────────────────────────────────────
+      if (event === 'SIGNED_OUT') {
+        set({
+          session: null,
+          profile: null,
+          birthProfile: null,
+          isPasswordRecovery: false,
+          isLoading: false,
+        })
+        return
       }
     })
   },
 
   signOut: async () => {
+    set({ isLoading: true })
     await supabase.auth.signOut()
-    set({ session: null, user: null, profile: null, birthProfile: null })
+    // SIGNED_OUT event above will clean up state
   },
 
   refreshBirthProfile: async () => {
-    const { user } = get()
-    if (!user) return
-    const { data } = await supabase
-      .from('birth_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
-    set({ birthProfile: data ?? null })
+    const { session } = get()
+    if (!session) return
+    const birthProfile = await fetchBirthProfile(session.user.id)
+    set({ birthProfile })
+  },
+
+  clearRecovery: () => {
+    set({ isPasswordRecovery: false })
   },
 }))
