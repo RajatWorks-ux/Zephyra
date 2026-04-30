@@ -10,6 +10,7 @@ interface AuthState {
   birthProfile: BirthProfile | null
   isLoading: boolean
   isInitialized: boolean
+
   setSession: (session: Session | null) => void
   setProfile: (profile: UserProfile | null) => void
   setBirthProfile: (birth: BirthProfile | null) => void
@@ -19,6 +20,9 @@ interface AuthState {
   refreshBirthProfile: () => Promise<void>
 }
 
+// ── KEY FIX: extracted helper so both initialize and onAuthStateChange
+// load both profiles in a single parallel round-trip instead of two
+// sequential awaits. Keeps code DRY and reduces latency.
 async function loadProfiles(userId: string) {
   const [{ data: profile }, { data: birth }] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', userId).single(),
@@ -35,9 +39,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: true,
   isInitialized: false,
 
-  setSession: (session) => set({ session, user: session?.user ?? null }),
+  setSession: (session) =>
+    set({ session, user: session?.user ?? null }),
+
   setProfile: (profile) => set({ profile }),
+
   setBirthProfile: (birthProfile) => set({ birthProfile }),
+
   setLoading: (isLoading) => set({ isLoading }),
 
   initialize: async () => {
@@ -55,6 +63,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ isLoading: false, isInitialized: true })
     }
 
+    // Listen for auth changes
     supabase.auth.onAuthStateChange(async (event, session) => {
       // ── KEY FIX: show spinner while profiles load ──────────────────────
       // Without this, RootNavigator sees session=true + birthProfile=null
@@ -80,7 +89,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user } = get()
     if (!user) return
     const { data } = await supabase
-      .from('birth_profiles').select('*').eq('user_id', user.id).single()
+      .from('birth_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single()
     set({ birthProfile: data ?? null })
   },
 }))
