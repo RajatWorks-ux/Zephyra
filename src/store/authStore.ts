@@ -10,7 +10,6 @@ interface AuthState {
   birthProfile: BirthProfile | null
   isLoading: boolean
   isInitialized: boolean
-
   setSession: (session: Session | null) => void
   setProfile: (profile: UserProfile | null) => void
   setBirthProfile: (birth: BirthProfile | null) => void
@@ -18,6 +17,14 @@ interface AuthState {
   initialize: () => Promise<void>
   signOut: () => Promise<void>
   refreshBirthProfile: () => Promise<void>
+}
+
+async function loadProfiles(userId: string) {
+  const [{ data: profile }, { data: birth }] = await Promise.all([
+    supabase.from('profiles').select('*').eq('id', userId).single(),
+    supabase.from('birth_profiles').select('*').eq('user_id', userId).single(),
+  ])
+  return { profile: profile ?? null, birthProfile: birth ?? null }
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -28,13 +35,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: true,
   isInitialized: false,
 
-  setSession: (session) =>
-    set({ session, user: session?.user ?? null }),
-
+  setSession: (session) => set({ session, user: session?.user ?? null }),
   setProfile: (profile) => set({ profile }),
-
   setBirthProfile: (birthProfile) => set({ birthProfile }),
-
   setLoading: (isLoading) => set({ isLoading }),
 
   initialize: async () => {
@@ -43,21 +46,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ session, user: session?.user ?? null })
 
       if (session?.user) {
-        // Load profile
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single()
-
-        // Load birth profile
-        const { data: birth } = await supabase
-          .from('birth_profiles')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .single()
-
-        set({ profile, birthProfile: birth ?? null })
+        const { profile, birthProfile } = await loadProfiles(session.user.id)
+        set({ profile, birthProfile })
       }
     } catch (error) {
       console.error('Auth init error:', error)
@@ -65,26 +55,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ isLoading: false, isInitialized: true })
     }
 
-    // Listen for auth changes
     supabase.auth.onAuthStateChange(async (event, session) => {
-      set({ session, user: session?.user ?? null })
+      // ── KEY FIX: show spinner while profiles load ──────────────────────
+      // Without this, RootNavigator sees session=true + birthProfile=null
+      // and briefly flashes the wrong screen before profiles finish loading.
+      // isInitialized stays true so the full app spinner doesn't show again.
+      set({ isLoading: true, session, user: session?.user ?? null })
 
       if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single()
-
-        const { data: birth } = await supabase
-          .from('birth_profiles')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .single()
-
-        set({ profile, birthProfile: birth ?? null })
+        const { profile, birthProfile } = await loadProfiles(session.user.id)
+        set({ profile, birthProfile, isLoading: false })
       } else {
-        set({ profile: null, birthProfile: null })
+        set({ profile: null, birthProfile: null, isLoading: false })
       }
     })
   },
@@ -98,10 +80,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user } = get()
     if (!user) return
     const { data } = await supabase
-      .from('birth_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single()
+      .from('birth_profiles').select('*').eq('user_id', user.id).single()
     set({ birthProfile: data ?? null })
   },
 }))
