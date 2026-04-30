@@ -17,9 +17,11 @@ export type AuthStackParams = {
   EmailVerify: { email: string }
   PhoneOTP: { phone: string }
   ForgotPassword: undefined
-  // Opened via deep link from Supabase emails:
-  PasswordReset: { token_hash?: string; type?: string }
-  AccountCreated: { token_hash?: string; type?: string }
+  // Opened via deep link from Supabase emails.
+  // `code`       — PKCE flow via {{ .ConfirmationURL }} (preferred)
+  // `token_hash` — direct OTP/recovery link (fallback)
+  PasswordReset: { token_hash?: string; type?: string; code?: string }
+  AccountCreated: { token_hash?: string; type?: string; code?: string }
 }
 
 const Stack = createNativeStackNavigator<AuthStackParams>()
@@ -38,3 +40,4 @@ export function AuthNavigator() {
     </Stack.Navigator>
   )
 }
+
