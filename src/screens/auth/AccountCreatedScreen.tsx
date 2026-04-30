@@ -64,10 +64,11 @@ function StarParticle({ delay, x, size, opacity }: { delay: number; x: number; s
 }
 
 export function AccountCreatedScreen({ navigation, route }: Props) {
-  const { token_hash, type } = route.params ?? {}
+  // ── PKCE via {{ .ConfirmationURL }}: gives `code`
+  // ── Direct link (old):              gives `token_hash` + `type`
+  const { code, token_hash, type } = route.params ?? {} as any
 
   const [verifying, setVerifying] = useState(true)
-  const [verifyError, setVerifyError] = useState(false)
 
   // ── Animations ──────────────────────────────────────────────────────────
   const screenFade = useRef(new Animated.Value(0)).current
@@ -128,19 +129,19 @@ export function AccountCreatedScreen({ navigation, route }: Props) {
   }
 
   async function verifyToken() {
-    if (token_hash && type === 'signup') {
-      try {
-        const { error } = await supabase.auth.verifyOtp({
-          token_hash,
-          type: 'email',
-        })
-        if (error) {
-          // Token might already be consumed (user tapped link twice) — that's fine, still verified
-          console.log('OTP verify note:', error.message)
-        }
-      } catch (e) {
-        console.log('Verify token error (non-fatal):', e)
+    try {
+      if (code) {
+        // ── PKCE flow: {{ .ConfirmationURL }} redirected back with a code ──
+        // exchangeCodeForSession verifies + sets the session automatically
+        const { error } = await supabase.auth.exchangeCodeForSession(String(code))
+        if (error) console.log('Exchange code note:', error.message)
+      } else if (token_hash && type === 'signup') {
+        // ── Direct token_hash flow (fallback) ──
+        const { error } = await supabase.auth.verifyOtp({ token_hash, type: 'email' })
+        if (error) console.log('OTP verify note:', error.message)
       }
+    } catch (e) {
+      console.log('Verify error (non-fatal):', e)
     }
     setVerifying(false)
     runSuccessAnimations()
@@ -432,3 +433,4 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 })
+    
