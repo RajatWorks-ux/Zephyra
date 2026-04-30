@@ -7,7 +7,7 @@ import { MainNavigator } from './MainNavigator'
 import { Colors } from '../constants/colors'
 
 export function RootNavigator() {
-  const { session, birthProfile, isLoading, isInitialized } = useAuthStore()
+  const { session, birthProfile, isLoading, isInitialized, isPasswordRecovery } = useAuthStore()
 
   if (isLoading || !isInitialized) {
     return (
@@ -18,15 +18,17 @@ export function RootNavigator() {
   }
 
   // No session → show auth flow
-  if (!session) {
+  // isPasswordRecovery → user clicked reset link, keep them in auth flow
+  // (PasswordResetScreen is inside AuthNavigator, so this is correct)
+  if (!session || isPasswordRecovery) {
     return <AuthNavigator />
   }
 
-  // Has session but no birth profile → show setup
+  // Has session but no birth profile → new user, show birth details setup
   if (!birthProfile) {
     return <SetupNavigator />
   }
 
-  // Has session and birth profile → main app
+  // Has session AND birth profile → existing user, go to main app
   return <MainNavigator />
 }
