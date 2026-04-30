@@ -128,18 +128,50 @@ export function SignInScreen({ navigation }: Props) {
     setLoading(true)
     try {
       if (mode === 'signup') {
+        // ── Pre-check: is this email already taken? ──────────────────────────
+        // This gives much better error messages than raw Supabase errors.
+        // ─────────────────────────────────────────────────────────────────────
+        const { data: authMethod } = await supabase.rpc(
+          'check_email_auth_method',
+          { p_email: email.trim() }
+        )
+        if (authMethod === 'email') {
+          setLoading(false)
+          Alert.alert(
+            'Account Already Exists',
+            'An account with this email already exists. Please sign in instead. If you forgot your password, tap "Forgot Password".',
+            [
+              { text: 'Sign In', onPress: () => { setMode('signin'); setPassword(''); setConfirmPassword('') } },
+              { text: 'Forgot Password', onPress: () => navigation.navigate('ForgotPassword') },
+              { text: 'Cancel', style: 'cancel' },
+            ]
+          )
+          return
+        }
+        if (authMethod === 'oauth:google') {
+          setLoading(false)
+          Alert.alert(
+            'Use Google Sign-In',
+            'This email is already connected to a Google account. Please sign in using the Google button below.',
+            [{ text: 'OK' }]
+          )
+          return
+        }
+        if (authMethod === 'phone') {
+          setLoading(false)
+          Alert.alert(
+            'Phone Account Exists',
+            'This email is linked to a phone number account. Please sign in using the Phone button below.',
+            [{ text: 'OK' }]
+          )
+          return
+        }
+        // ── No existing account found — proceed with signup ──────────────────
         const { error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: {
             data: { full_name: name.trim() },
-            // ── KEY FIX ───────────────────────────────────────────────────────
-            // This tells Supabase WHERE to redirect after email verification.
-            // {{ .ConfirmationURL }} in the email template will use this URL.
-            // Supabase goes HTTPS first (works in Gmail), then redirects here.
-            // In Expo Go:  exp://192.168.1.2:8081/--/account-created?code=XXX
-            // Built APK:   zephyra://account-created?code=XXX
-            // ─────────────────────────────────────────────────────────────────
             emailRedirectTo: Linking.createURL('account-created'),
           },
         })
@@ -461,4 +493,3 @@ const styles = StyleSheet.create({
   socialLabel: { fontFamily: Fonts.bodySemiBold, fontSize: 14, color: 'rgba(255,255,255,0.7)' },
   legal: { fontFamily: Fonts.body, fontSize: 11, color: 'rgba(255,255,255,0.2)', textAlign: 'center', lineHeight: 18 },
 })
-              
