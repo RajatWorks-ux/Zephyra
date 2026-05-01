@@ -1,4 +1,3 @@
-
 // src/store/authStore.ts
 import { create } from 'zustand'
 import { Session } from '@supabase/supabase-js'
@@ -64,34 +63,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isPasswordRecovery: false,
 
   initialize: async () => {
-    // Check if user already had a session (e.g. app restarted)
-    const { data: { session } } = await supabase.auth.getSession()
-
-    if (session) {
-      const [profile, birthProfile] = await Promise.all([
-        fetchProfile(session.user.id),
-        fetchBirthProfile(session.user.id),
-      ])
-      set({
-        session,
-        profile,
-        birthProfile,
-        isLoading: false,
-        isInitialized: true,
-        isPasswordRecovery: false,
-      })
-    } else {
-      set({
-        session: null,
-        profile: null,
-        birthProfile: null,
-        isLoading: false,
-        isInitialized: true,
-        isPasswordRecovery: false,
-      })
-    }
-
-    // 🔑 THE MAIN FIX: Listen to ALL auth events and react correctly
+    // ─── FIX APPLIED: Register listener FIRST before getSession() ────────────
+    // Previously the listener was registered AFTER getSession() completed.
+    // If a Google OAuth redirect arrived during that async gap (cold start),
+    // the SIGNED_IN event would fire before the listener was attached and
+    // would be silently missed — leaving session: null and sending the user
+    // back to the sign-in screen even though auth succeeded.
+    // Registering first guarantees we never miss an auth event.
+    // ─────────────────────────────────────────────────────────────────────────
     supabase.auth.onAuthStateChange(async (event, session) => {
 
       // ────────────────────────────────────────────────────────────────
@@ -145,6 +124,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return
       }
     })
+
+    // Check if user already had a session (e.g. app restarted).
+    // This runs AFTER the listener is registered so no events are missed.
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (session) {
+      const [profile, birthProfile] = await Promise.all([
+        fetchProfile(session.user.id),
+        fetchBirthProfile(session.user.id),
+      ])
+      set({
+        session,
+        profile,
+        birthProfile,
+        isLoading: false,
+        isInitialized: true,
+        isPasswordRecovery: false,
+      })
+    } else {
+      set({
+        session: null,
+        profile: null,
+        birthProfile: null,
+        isLoading: false,
+        isInitialized: true,
+        isPasswordRecovery: false,
+      })
+    }
   },
 
   signOut: async () => {
@@ -164,3 +171,4 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isPasswordRecovery: false })
   },
 }))
+            
