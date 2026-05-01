@@ -1,4 +1,3 @@
-
 // src/screens/auth/SignInScreen.tsx
 import React, { useState, useRef } from 'react'
 import {
@@ -194,10 +193,15 @@ export function SignInScreen({ navigation }: Props) {
     }
   }
 
-  // ─── FIXED: Google OAuth with handled flag ─────────────────────────────────
+  // ─── FIX APPLIED: Google OAuth with correct redirectTo path ───────────────
+  // makeRedirectUri() with no args returns exp://192.168.1.2:8081 (no path),
+  // which does NOT match the redirect URLs registered in Supabase or the
+  // deep-link config in App.tsx. Adding { path: 'auth/callback' } produces
+  // exp://192.168.1.2:8081/--/auth/callback which matches both perfectly.
+  // ──────────────────────────────────────────────────────────────────────────
   async function handleGoogle() {
     try {
-      const redirectTo = AuthSession.makeRedirectUri()
+      const redirectTo = AuthSession.makeRedirectUri({ path: 'auth/callback' })
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -493,3 +497,4 @@ const styles = StyleSheet.create({
   socialLabel: { fontFamily: Fonts.bodySemiBold, fontSize: 14, color: 'rgba(255,255,255,0.7)' },
   legal: { fontFamily: Fonts.body, fontSize: 11, color: 'rgba(255,255,255,0.2)', textAlign: 'center', lineHeight: 18 },
 })
+
