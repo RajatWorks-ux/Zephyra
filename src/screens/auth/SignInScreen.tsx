@@ -1,3 +1,4 @@
+
 // src/screens/auth/SignInScreen.tsx
 import React, { useState, useRef } from 'react'
 import {
@@ -193,11 +194,9 @@ export function SignInScreen({ navigation }: Props) {
     }
   }
 
-  // ─── FIXED: Google OAuth ───────────────────────────────────────────────────
+  // ─── FIXED: Google OAuth with handled flag ─────────────────────────────────
   async function handleGoogle() {
     try {
-      // In Expo Go this becomes exp://192.168.1.2:8081
-      // In your built app this becomes zephyra://auth/callback
       const redirectTo = AuthSession.makeRedirectUri()
 
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -205,10 +204,7 @@ export function SignInScreen({ navigation }: Props) {
         options: {
           redirectTo,
           skipBrowserRedirect: true,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
+          queryParams: { access_type: 'offline', prompt: 'consent' },
         },
       })
 
@@ -217,13 +213,16 @@ export function SignInScreen({ navigation }: Props) {
         return
       }
 
-      // Listen for the redirect BEFORE opening the browser
+      // ✅ FLAG — ensures code is only exchanged ONCE
+      let handled = false
+
       const subscription = Linking.addEventListener('url', async ({ url }) => {
+        if (handled) return
+        handled = true
         subscription.remove()
         WebBrowser.dismissBrowser()
 
         const { params } = Linking.parse(url)
-
         if (params?.code) {
           const { error: sessionError } = await supabase.auth.exchangeCodeForSession(
             String(params.code)
@@ -239,8 +238,9 @@ export function SignInScreen({ navigation }: Props) {
 
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo)
 
-      // Fallback if Linking event didn't fire (some Android versions)
-      if (result.type === 'success' && result.url) {
+      // ✅ Only runs if Linking event did NOT already handle it
+      if (!handled && result.type === 'success' && result.url) {
+        handled = true
         subscription.remove()
         const { params } = Linking.parse(result.url)
         if (params?.code) {
@@ -251,7 +251,7 @@ export function SignInScreen({ navigation }: Props) {
             refresh_token: String(params.refresh_token),
           })
         }
-      } else {
+      } else if (!handled) {
         subscription.remove()
       }
     } catch (e: any) {
