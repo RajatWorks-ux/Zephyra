@@ -28,7 +28,7 @@ export const Videos = {
     uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/birth-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvYmlydGgtYmcubXA0IiwiaWF0IjoxNzc3MjgxMDk4LCJleHAiOjE4MDg4MTcwOTh9.tny2Oj8TNfv4lJrexaTiK8dpoozXM1Oow-PSsPg22Io',
   },
   forgotBg: {
-    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/forgot-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvZm9yZ290LWJnLm1wNCIsImlhdCI6MTc3NzM4NTY3MCwiZXhwIjoxODA4OTIxNjcwfQ.6HDIo5-X0SWVQAKqI7vbfxovFsryK696rMlNJu8r9Jk',
+    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/home-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvaG9tZS1iZy5tcDQiLCJpYXQiOjE3Nzc3MTkyODAsImV4cCI6MTgwOTI1NTI4MH0.cvb5b6GN6sQi0WOIwMwWSL7pThj2lviZCMJ5_DnlqUI',
   },
   accountCreatedBg: {
     uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/account-created-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvYWNjb3VudC1jcmVhdGVkLWJnLm1wNCIsImlhdCI6MTc3NzQ1MDYzOSwiZXhwIjoxODA4OTg2NjM5fQ.b-66DW4qPj6lTRdQlx2DpYI_1-fV9DL1islDyoBP3aM',
@@ -43,9 +43,9 @@ export const Videos = {
     uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/loading-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvbG9hZGluZy1iZy5tcDQiLCJpYXQiOjE3NzcyODEwMjEsImV4cCI6MTgwODgxNzAyMX0.emjFxXw16PebUpgj2aVegITeHZYzdPQB-C6l-DAkDpo',
   },
   readingBg: {
-    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/loading-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvbG9hZGluZy1iZy5tcDQiLCJpYXQiOjE3NzcyODEwMjEsImV4cCI6MTgwODgxNzAyMX0.emjFxXw16PebUpgj2aVegITeHZYzdPQB-C6l-DAkDpo',
+    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/reading-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvcmVhZGluZy1iZy5tcDQiLCJpYXQiOjE3Nzc3MTkzMTQsImV4cCI6MTgwOTI1NTMxNH0.F2DN_65Emrzg1BTupYzf5l2rjzGq15W2V0__acCDXYc',
   },
   forecastBg: {
-    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/loading-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvbG9hZGluZy1iZy5tcDQiLCJpYXQiOjE3NzcyODEwMjEsImV4cCI6MTgwODgxNzAyMX0.emjFxXw16PebUpgj2aVegITeHZYzdPQB-C6l-DAkDpo',
+    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/forecast-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvZm9yZWNhc3QtYmcubXA0IiwiaWF0IjoxNzc3NzE5MzM1LCJleHAiOjE4MDkyNTUzMzV9.Yg6B8bLSlljAXx8lZtePLuyYmSJheZZmqxilI5FqWs4',
   },
 }
