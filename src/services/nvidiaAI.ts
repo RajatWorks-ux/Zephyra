@@ -70,6 +70,7 @@ async function getAIResponseWithKey(
   maxTokens: number,
   timeoutMs: number = 240000
 ): Promise<string> {
+  console.log(`[Zephyra] ▶ Oracle starting — key ...${apiKey.slice(-6)}`)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -90,11 +91,17 @@ async function getAIResponseWithKey(
       }),
     })
     clearTimeout(timer)
+    if (!res.ok) {
+      console.error(`[Zephyra] ✗ Oracle key ...${apiKey.slice(-6)} HTTP error: ${res.status}`)
+      return ''
+    }
     const data = await res.json()
-    return data.choices?.[0]?.message?.content || ''
+    const result = data?.choices?.[0]?.message?.content || ''
+    console.log(`[Zephyra] ✓ Oracle key ...${apiKey.slice(-6)} done — ${result.length} chars`)
+    return result
   } catch (error: any) {
     clearTimeout(timer)
-    console.error(`API call failed for key ending ...${apiKey.slice(-6)}:`, error.message)
+    console.error(`[Zephyra] ✗ Oracle key ...${apiKey.slice(-6)} FAILED:`, error.message)
     return ''
   }
 }
@@ -625,4 +632,4 @@ export async function generateFullReading(
   return null
   }
 
-
+  
