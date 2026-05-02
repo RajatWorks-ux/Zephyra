@@ -1,4 +1,4 @@
- import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Animated, LayoutAnimation, Platform, UIManager,
@@ -15,6 +15,8 @@ import { Fonts } from '../../constants/fonts'
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true)
 }
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
 
 const CHAPTERS = [
   {
@@ -67,6 +69,69 @@ const CHAPTERS = [
     accent: '#2FBEBE',
   },
 ] as const
+
+// ─── Progress Dots ────────────────────────────────────────────────────────────
+function ProgressDots({
+  expandedId,
+  visitedIds,
+}: {
+  expandedId: string | null
+  visitedIds: Set<string>
+}) {
+  return (
+    <View style={dots.row}>
+      {CHAPTERS.map((ch, i) => {
+        const isActive = ch.id === expandedId
+        const isDone = visitedIds.has(ch.id) && ch.id !== expandedId
+        return (
+          <View
+            key={ch.id}
+            style={[
+              dots.dot,
+              isActive && dots.dotActive,
+              isDone && dots.dotDone,
+            ]}
+          />
+        )
+      })}
+      <Text style={dots.label}>
+        {visitedIds.size} of {CHAPTERS.length} read
+      </Text>
+    </View>
+  )
+}
+
+const dots = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    marginBottom: 24,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  dotDone: {
+    backgroundColor: '#C9A84C',
+  },
+  dotActive: {
+    width: 18,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#44FF88',
+  },
+  label: {
+    fontFamily: Fonts.accent,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.28)',
+    letterSpacing: 1,
+    marginLeft: 6,
+  },
+})
 
 // ─── Past Reveal Cards ────────────────────────────────────────────────────────
 function PastRevealCards({ statements }: { statements: string[] }) {
@@ -166,22 +231,40 @@ const past = StyleSheet.create({
     alignItems: 'center',
     marginTop: 4,
   },
-  resultText: { fontFamily: Fonts.heading, fontSize: 18, color: '#C9A84C', marginBottom: 8, textAlign: 'center' },
-  resultSub: { fontFamily: Fonts.mystical, fontSize: 13, color: 'rgba(255,255,255,0.5)', textAlign: 'center', lineHeight: 22 },
+  resultText: {
+    fontFamily: Fonts.heading,
+    fontSize: 18,
+    color: '#C9A84C',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  resultSub: {
+    fontFamily: Fonts.mystical,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
 })
 
-// ─── Chapter Accordion ────────────────────────────────────────────────────────
-function Chapter({
+// ─── Chapter Row (Timeline style) ─────────────────────────────────────────────
+function ChapterRow({
   chapter,
+  index,
   content,
   pastStatements,
   isExpanded,
+  isVisited,
+  isLast,
   onToggle,
 }: {
   chapter: typeof CHAPTERS[number]
+  index: number
   content: string
   pastStatements?: string[]
   isExpanded: boolean
+  isVisited: boolean
+  isLast: boolean
   onToggle: () => void
 }) {
   const arrowAnim = useRef(new Animated.Value(0)).current
@@ -194,89 +277,167 @@ function Chapter({
     }).start()
   }, [isExpanded])
 
-  const arrowRotate = arrowAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] })
+  const arrowRotate = arrowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  })
+
+  // Node color: active = green, visited = gold, unread = dim
+  const nodeColor = isExpanded
+    ? '#44FF88'
+    : isVisited
+    ? '#C9A84C'
+    : 'rgba(255,255,255,0.2)'
 
   return (
-    <View style={[chap.wrapper, { borderColor: chapter.accent + '25' }]}>
-      <TouchableOpacity
-        style={chap.header}
-        onPress={() => {
-          LayoutAnimation.easeInEaseOut()
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-          onToggle()
-        }}
-        activeOpacity={0.8}
-      >
+    <View style={row.container}>
+      {/* Timeline spine + node */}
+      <View style={row.spine}>
+        <View style={[row.node, { borderColor: nodeColor, backgroundColor: '#05050F' }]}>
+          <Text style={[row.nodeNum, { color: nodeColor }]}>{ROMAN[index]}</Text>
+        </View>
+        {!isLast && <View style={row.line} />}
+      </View>
+
+      {/* Card */}
+      <View style={[row.card, { borderColor: chapter.accent + '30' }]}>
+        {/* top accent gradient line */}
+        <LinearGradient
+          colors={[chapter.accent, 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={row.topLine}
+        />
         <LinearGradient
           colors={[chapter.accent + '10', 'transparent']}
           style={StyleSheet.absoluteFillObject}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
+          end={{ x: 1, y: 1 }}
         />
-        <View style={chap.dot} />
-        <View style={chap.headerText}>
-          <Text style={[chap.title, { color: chapter.accent }]}>{chapter.title}</Text>
-          <Text style={chap.subtitle}>{chapter.subtitle}</Text>
-        </View>
-        <Animated.Text style={[chap.arrow, { transform: [{ rotate: arrowRotate }], color: chapter.accent }]}>
-          v
-        </Animated.Text>
-      </TouchableOpacity>
 
-      {isExpanded && (
-        <View style={chap.body}>
-          {chapter.isPastReveal && pastStatements ? (
-            <PastRevealCards statements={pastStatements} />
-          ) : (
-            <Text style={chap.content}>{content}</Text>
-          )}
-        </View>
-      )}
+        {/* Header touchable */}
+        <TouchableOpacity
+          style={row.header}
+          onPress={() => {
+            LayoutAnimation.easeInEaseOut()
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+            onToggle()
+          }}
+          activeOpacity={0.8}
+        >
+          <View style={row.headerText}>
+            <Text style={row.chapterLabel}>Chapter {ROMAN[index]}</Text>
+            <Text style={[row.title, { color: chapter.accent }]}>{chapter.title}</Text>
+            <Text style={row.subtitle}>{chapter.subtitle}</Text>
+          </View>
+          <Animated.Text
+            style={[row.arrow, { color: chapter.accent, transform: [{ rotate: arrowRotate }] }]}
+          >
+            ›
+          </Animated.Text>
+        </TouchableOpacity>
+
+        {/* Expanded body */}
+        {isExpanded && (
+          <View style={row.body}>
+            {chapter.isPastReveal && pastStatements ? (
+              <PastRevealCards statements={pastStatements} />
+            ) : (
+              <Text style={row.content}>{content}</Text>
+            )}
+          </View>
+        )}
+      </View>
     </View>
   )
 }
 
-const chap = StyleSheet.create({
-  wrapper: {
+const row = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+
+  // Timeline left column
+  spine: {
+    width: 52,
+    alignItems: 'center',
+    paddingTop: 16,
+  },
+  node: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  nodeNum: {
+    fontFamily: Fonts.accent,
+    fontSize: 8,
+    letterSpacing: 0.5,
+  },
+  line: {
+    width: 1,
+    flex: 1,
+    minHeight: 16,
+    marginTop: 4,
+    backgroundColor: 'rgba(201,168,76,0.2)',
+  },
+
+  // Card
+  card: {
+    flex: 1,
     borderRadius: 18,
     borderWidth: 1,
     overflow: 'hidden',
-    backgroundColor: 'rgba(13,13,43,0.55)',
-    marginBottom: 14,
+    backgroundColor: 'rgba(13,13,43,0.6)',
+    position: 'relative',
+  },
+  topLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    gap: 14,
-    overflow: 'hidden',
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'currentColor',
+    padding: 18,
+    paddingTop: 20,
+    gap: 10,
   },
   headerText: { flex: 1 },
+  chapterLabel: {
+    fontFamily: Fonts.accent,
+    fontSize: 8,
+    color: 'rgba(255,255,255,0.25)',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginBottom: 5,
+  },
   title: {
     fontFamily: Fonts.heading,
     fontSize: 15,
-    marginBottom: 4,
-    lineHeight: 22,
+    lineHeight: 21,
+    marginBottom: 3,
   },
   subtitle: {
     fontFamily: Fonts.body,
-    fontSize: 12,
+    fontSize: 11,
     color: 'rgba(255,255,255,0.35)',
-    lineHeight: 18,
+    lineHeight: 17,
   },
   arrow: {
-    fontFamily: Fonts.accent,
-    fontSize: 12,
+    fontSize: 20,
+    paddingRight: 2,
   },
   body: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 18,
+    paddingBottom: 18,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
     paddingTop: 16,
@@ -293,7 +454,15 @@ const chap = StyleSheet.create({
 export function ReadingScreen() {
   const navigation = useNavigation()
   const { reading } = useReadingStore()
+
   const [expandedId, setExpandedId] = useState<string | null>('past')
+  const [visitedIds, setVisitedIds] = useState<Set<string>>(new Set(['past']))
+
+  function handleToggle(id: string) {
+    LayoutAnimation.easeInEaseOut()
+    setVisitedIds(prev => new Set([...prev, id]))
+    setExpandedId(prev => (prev === id ? null : id))
+  }
 
   function getContent(id: string): string {
     if (!reading) return 'Your reading is still being generated. Please wait a moment.'
@@ -308,14 +477,16 @@ export function ReadingScreen() {
         source={Videos.readingBg}
         style={StyleSheet.absoluteFillObject}
         resizeMode={ResizeMode.COVER}
-        isLooping shouldPlay isMuted
+        isLooping
+        shouldPlay
+        isMuted
       />
       <LinearGradient
         colors={['rgba(5,5,15,0.5)', 'rgba(5,5,15,0.75)', 'rgba(5,5,15,0.92)']}
         style={StyleSheet.absoluteFillObject}
       />
 
-      {/* Back button + Title */}
+      {/* Top bar */}
       <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -332,30 +503,44 @@ export function ReadingScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.intro}>
-          Eight chapters. Every tradition. Your complete truth.
-        </Text>
+        {/* ── Hero ──────────────────────────────────────────────────────── */}
+        <View style={styles.hero}>
+          <Text style={styles.heroEyebrow}>✦ Your complete reading</Text>
+          <Text style={styles.heroTitle}>Eight Chapters.{'\n'}Every Tradition.</Text>
+          <Text style={styles.heroSub}>Your complete truth, written in the stars.</Text>
+        </View>
 
+        {/* ── Progress dots ────────────────────────────────────────────── */}
+        <ProgressDots expandedId={expandedId} visitedIds={visitedIds} />
+
+        {/* ── Wait card ────────────────────────────────────────────────── */}
         {!reading && (
           <BlurView intensity={15} tint="dark" style={styles.waitCard}>
+            <Text style={styles.waitIcon}>◌</Text>
             <Text style={styles.waitText}>
-              Your reading is being generated. Return to the home screen and come back once it completes.
+              Your reading is being generated.{'\n'}Return once it completes.
             </Text>
           </BlurView>
         )}
 
-        {CHAPTERS.map((chapter) => (
-          <Chapter
-            key={chapter.id}
-            chapter={chapter}
-            content={getContent(chapter.id)}
-            pastStatements={reading?.past_statements || []}
-            isExpanded={expandedId === chapter.id}
-            onToggle={() => setExpandedId(expandedId === chapter.id ? null : chapter.id)}
-          />
-        ))}
+        {/* ── Timeline chapters ────────────────────────────────────────── */}
+        <View style={styles.timelineWrap}>
+          {CHAPTERS.map((chapter, index) => (
+            <ChapterRow
+              key={chapter.id}
+              chapter={chapter}
+              index={index}
+              content={getContent(chapter.id)}
+              pastStatements={reading?.past_statements || []}
+              isExpanded={expandedId === chapter.id}
+              isVisited={visitedIds.has(chapter.id)}
+              isLast={index === CHAPTERS.length - 1}
+              onToggle={() => handleToggle(chapter.id)}
+            />
+          ))}
+        </View>
 
-        {/* Compatible signs */}
+        {/* ── Compatible signs ─────────────────────────────────────────── */}
         {reading?.compatible_signs && (
           <>
             <Text style={styles.sectionLabel}>Your Highest Compatibility</Text>
@@ -370,7 +555,7 @@ export function ReadingScreen() {
           </>
         )}
 
-        {/* Career strengths */}
+        {/* ── Career strengths ─────────────────────────────────────────── */}
         {reading?.career_strengths && (
           <>
             <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Your Natural Gifts</Text>
@@ -392,6 +577,7 @@ export function ReadingScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#05050F' },
 
+  // Top bar
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -405,29 +591,56 @@ const styles = StyleSheet.create({
   pageTitle: {
     fontFamily: Fonts.heading,
     fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
+    color: 'rgba(255,255,255,0.45)',
     letterSpacing: 1,
     textAlign: 'center',
     flex: 1,
   },
 
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
-  intro: {
-    fontFamily: Fonts.mystical,
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.35)',
-    textAlign: 'center',
-    marginBottom: 28,
-    lineHeight: 24,
+
+  // Hero
+  hero: { alignItems: 'center', paddingBottom: 24 },
+  heroEyebrow: {
+    fontFamily: Fonts.accent,
+    fontSize: 9,
+    letterSpacing: 3,
+    color: 'rgba(201,168,76,0.5)',
+    textTransform: 'uppercase',
+    marginBottom: 10,
   },
+  heroTitle: {
+    fontFamily: Fonts.heading,
+    fontSize: 28,
+    color: '#C9A84C',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+    lineHeight: 36,
+    marginBottom: 8,
+  },
+  heroSub: {
+    fontFamily: Fonts.mystical,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.3)',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    lineHeight: 22,
+  },
+
+  // Wait card
   waitCard: {
     borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.07)',
     overflow: 'hidden',
     padding: 24,
-    marginBottom: 24,
+    marginBottom: 20,
     alignItems: 'center',
+  },
+  waitIcon: {
+    fontSize: 22,
+    color: 'rgba(201,168,76,0.45)',
+    marginBottom: 10,
   },
   waitText: {
     fontFamily: Fonts.body,
@@ -436,6 +649,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
+
+  // Timeline wrapper — no extra styling needed,
+  // the ChapterRow handles its own layout
+  timelineWrap: {},
+
+  // Section label
   sectionLabel: {
     fontFamily: Fonts.accent,
     fontSize: 10,
@@ -443,7 +662,10 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
     marginBottom: 14,
+    marginTop: 8,
   },
+
+  // Compat
   compatRow: { flexDirection: 'row', gap: 12 },
   compatCard: {
     flex: 1,
@@ -457,6 +679,8 @@ const styles = StyleSheet.create({
   },
   compatSign: { fontFamily: Fonts.heading, fontSize: 14, color: '#C9A84C' },
   compatPct: { fontFamily: Fonts.accentBold, fontSize: 20, color: '#FFD700' },
+
+  // Strengths
   strengthRow: {
     flexDirection: 'row',
     alignItems: 'center',
