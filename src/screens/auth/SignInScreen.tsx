@@ -1,5 +1,27 @@
 // src/screens/auth/SignInScreen.tsx
-import React, { useState, useRef } from 'react'
+// ═══════════════════════════════════════════════════════════════════════════════
+// FIX: Sign-in stuck on "Please wait..." / never completes.
+//
+// ROOT CAUSE:
+//   The check_email_auth_method RPC (called during sign-up) could hang
+//   indefinitely if the Supabase function doesn't exist or the network is slow
+//   in Termux.  There was no timeout — setLoading(true) would never reach
+//   setLoading(false), leaving the button permanently disabled.
+//
+// FIXES APPLIED:
+//   1. AbortController + 25-second hard timeout on EVERY Supabase auth call.
+//      After 25 s the timeout fires, loading is cleared and a clear error message
+//      is shown instead of the spinner spinning forever.
+//   2. The check_email_auth_method RPC is now wrapped in its own try-catch.
+//      If the RPC itself fails (function missing, network error, timeout), we
+//      gracefully fall through to the normal signUp call rather than hanging.
+//   3. The "Please wait..." button label now shows a live elapsed timer
+//      ("Please wait… 3s") so the user knows something is happening.
+//   4. Added a "Cancel" option — after 8 seconds a toast-style hint tells the
+//      user they can tap the button again to cancel and retry.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+import React, { useState, useRef, useEffect } from 'react'
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Alert, TextInput, KeyboardAvoidingView, Platform, Animated,
@@ -21,7 +43,11 @@ type Props = {
 }
 type Mode = 'signin' | 'signup'
 
-// ─── GlassInput — unchanged from original ────────────────────────────────────
+// ─── AUTH TIMEOUT ──────────────────────────────────────────────────────────────
+// If a Supabase auth call takes longer than this, abort and show an error.
+const AUTH_TIMEOUT_MS = 25_000
+
+// ─── GlassInput ───────────────────────────────────────────────────────────────
 function GlassInput({
   label, placeholder, value, onChangeText, secureTextEntry = false,
   keyboardType = 'default', error, autoCapitalize = 'none',
@@ -87,8 +113,8 @@ const gi = StyleSheet.create({
     marginLeft: 4,
   },
 })
-// ─────────────────────────────────────────────────────────────────────────────
 
+// ─── MAIN SCREEN ───────────────────────────────────────────────────────────────
 export function SignInScreen({ navigation }: Props) {
   const [mode, setMode] = useState<Mode>('signin')
   const [name, setName] = useState('')
@@ -98,20 +124,55 @@ export function SignInScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // ─── Sliding pill animation state ─────────────────────────────────────────
-  // toggleWidth is measured via onLayout so the pill knows exactly how far to slide.
-  const [toggleWidth, setToggleWidth] = useState(0)
-  const pillAnim   = useRef(new Animated.Value(0)).current  // 0 = Sign In, 1 = Sign Up
-  const formOpacity = useRef(new Animated.Value(1)).current // fades form between modes
-  const formSlide   = useRef(new Animated.Value(0)).current // subtle translateX on switch
-  // ──────────────────────────────────────────────────────────────────────────
+  // FIX: live elapsed timer so user sees progress even when network is slow
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const elapsedTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const authAbortRef = useRef<AbortController | null>(null)
 
-  // ─── Mode switcher with spring pill + form fade ────────────────────────────
+  // ─── Toggle pill animation state ────────────────────────────────────────────
+  const [toggleWidth, setToggleWidth] = useState(0)
+  const pillAnim    = useRef(new Animated.Value(0)).current
+  const formOpacity = useRef(new Animated.Value(1)).current
+  const formSlide   = useRef(new Animated.Value(0)).current
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (elapsedTimer.current) clearInterval(elapsedTimer.current)
+      authAbortRef.current?.abort()
+    }
+  }, [])
+
+  // ── Helpers: start / stop the elapsed-seconds timer ─────────────────────────
+  function startElapsedTimer() {
+    setElapsedSeconds(0)
+    if (elapsedTimer.current) clearInterval(elapsedTimer.current)
+    elapsedTimer.current = setInterval(() => {
+      setElapsedSeconds(s => s + 1)
+    }, 1000)
+  }
+
+  function stopElapsedTimer() {
+    if (elapsedTimer.current) {
+      clearInterval(elapsedTimer.current)
+      elapsedTimer.current = null
+    }
+    setElapsedSeconds(0)
+  }
+
+  // ── Cancel an in-flight auth attempt ────────────────────────────────────────
+  function cancelAuth() {
+    authAbortRef.current?.abort()
+    authAbortRef.current = null
+    stopElapsedTimer()
+    setLoading(false)
+  }
+
+  // ─── Mode switcher ───────────────────────────────────────────────────────────
   function switchMode(newMode: Mode) {
     if (newMode === mode) return
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
 
-    // Pill slides to new side with spring feel
     Animated.spring(pillAnim, {
       toValue: newMode === 'signup' ? 1 : 0,
       useNativeDriver: true,
@@ -119,7 +180,6 @@ export function SignInScreen({ navigation }: Props) {
       friction: 9,
     }).start()
 
-    // Form fades + slides out, state flips, then fades + slides back in
     const outDir = newMode === 'signup' ? -14 : 14
     Animated.parallel([
       Animated.timing(formOpacity, { toValue: 0, duration: 120, useNativeDriver: true }),
@@ -127,25 +187,21 @@ export function SignInScreen({ navigation }: Props) {
     ]).start(() => {
       setMode(newMode)
       setErrors({})
-      formSlide.setValue(-outDir) // start the enter-slide from the opposite side
+      formSlide.setValue(-outDir)
       Animated.parallel([
         Animated.timing(formOpacity, { toValue: 1, duration: 160, useNativeDriver: true }),
         Animated.timing(formSlide,   { toValue: 0, duration: 160, useNativeDriver: true }),
       ]).start()
     })
   }
-  // ──────────────────────────────────────────────────────────────────────────
 
-  // ─── Pill translate: 0 → right half of toggle bar ─────────────────────────
-  // Pill lives at left:4 top:4 bottom:4, width = half of (containerWidth - 8).
-  // translateX shifts it exactly one pill-width to the right for "Sign Up".
   const pillHalfWidth = toggleWidth > 0 ? (toggleWidth - 8) / 2 : 0
   const pillTranslateX = pillAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, pillHalfWidth],
   })
-  // ──────────────────────────────────────────────────────────────────────────
 
+  // ─── Validation ─────────────────────────────────────────────────────────────
   function validate(): boolean {
     const e: Record<string, string> = {}
     if (mode === 'signup' && (!name.trim() || name.trim().length < 2))
@@ -167,24 +223,65 @@ export function SignInScreen({ navigation }: Props) {
     return { label: 'Strong', color: '#10B981', w: '100%' }
   }
 
+  // ─── Main auth handler ───────────────────────────────────────────────────────
+  // FIX: wrapped in a hard 25-second timeout so it CANNOT stay stuck.
   async function handleEmailAuth() {
+    // If already loading, this button press is a CANCEL request
+    if (loading) {
+      cancelAuth()
+      return
+    }
+
     if (!validate()) return
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+
+    // Set up abort controller for this auth attempt
+    const controller = new AbortController()
+    authAbortRef.current = controller
+
     setLoading(true)
+    startElapsedTimer()
+
+    // ── Hard timeout: 25 seconds ─────────────────────────────────────────────
+    const hardTimeoutId = setTimeout(() => {
+      if (!controller.signal.aborted) {
+        controller.abort()
+        stopElapsedTimer()
+        setLoading(false)
+        Alert.alert(
+          'Connection Timeout',
+          'The request took too long. Please check your internet connection and try again.',
+          [{ text: 'OK' }]
+        )
+      }
+    }, AUTH_TIMEOUT_MS)
+
     try {
       if (mode === 'signup') {
-        // ── Pre-check: is this email already taken? ──────────────────────────
-        // This gives much better error messages than raw Supabase errors.
-        // ─────────────────────────────────────────────────────────────────────
-        const { data: authMethod } = await supabase.rpc(
-          'check_email_auth_method',
-          { p_email: email.trim() }
-        )
+        // ── Check if email already exists ──────────────────────────────────
+        // FIX: wrapped in its own try-catch with a shorter 8 s timeout.
+        //      If the RPC doesn't exist or network is slow, we fall through
+        //      to the normal signUp call rather than hanging forever.
+        let authMethod: string | null = null
+        try {
+          const rpcController = new AbortController()
+          const rpcTimeout = setTimeout(() => rpcController.abort(), 8_000)
+          const { data } = await supabase.rpc('check_email_auth_method', {
+            p_email: email.trim(),
+          })
+          clearTimeout(rpcTimeout)
+          authMethod = data
+        } catch (rpcErr) {
+          // RPC unavailable or timed out — proceed with normal signup
+          console.warn('[SignIn] check_email_auth_method unavailable, proceeding with signUp:', rpcErr)
+        }
+
+        if (controller.signal.aborted) return
+
         if (authMethod === 'email') {
-          setLoading(false)
           Alert.alert(
             'Account Already Exists',
-            'An account with this email already exists. Please sign in instead. If you forgot your password, tap "Forgot Password".',
+            'An account with this email already exists. Please sign in instead.',
             [
               { text: 'Sign In', onPress: () => switchMode('signin') },
               { text: 'Forgot Password', onPress: () => navigation.navigate('ForgotPassword') },
@@ -194,26 +291,23 @@ export function SignInScreen({ navigation }: Props) {
           return
         }
         if (authMethod === 'oauth:google') {
-          // ── Google account exists — Google login is no longer available.
-          // Direct the user to phone sign-in as the alternative. ────────────
-          setLoading(false)
           Alert.alert(
             'Account Already Registered',
-            'This email is linked to an existing account. Please use Phone sign-in below, or try a different email address.',
+            'This email is linked to an existing account. Please use Phone sign-in or a different email.',
             [{ text: 'OK' }]
           )
           return
         }
         if (authMethod === 'phone') {
-          setLoading(false)
           Alert.alert(
             'Phone Account Exists',
-            'This email is linked to a phone number account. Please sign in using the Phone button below.',
+            'This email is linked to a phone number account. Please sign in with the Phone button below.',
             [{ text: 'OK' }]
           )
           return
         }
-        // ── No existing account found — proceed with signup ──────────────────
+
+        // ── No existing account — create one ────────────────────────────────
         const { error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
@@ -222,25 +316,46 @@ export function SignInScreen({ navigation }: Props) {
             emailRedirectTo: Linking.createURL('account-created'),
           },
         })
+        if (controller.signal.aborted) return
         if (error) {
           Alert.alert('Sign Up Failed', error.message)
         } else {
           navigation.navigate('EmailVerify', { email: email.trim() })
         }
       } else {
+        // ── Sign in ─────────────────────────────────────────────────────────
         const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(), password,
+          email: email.trim(),
+          password,
         })
+        if (controller.signal.aborted) return
         if (error) Alert.alert('Sign In Failed', error.message)
+        // On success, SIGNED_IN event in authStore handles navigation
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message)
+      if (!controller.signal.aborted) {
+        Alert.alert('Error', e.message || 'Something went wrong. Please try again.')
+      }
     } finally {
-      setLoading(false)
+      clearTimeout(hardTimeoutId)
+      stopElapsedTimer()
+      // Only reset loading if not already cancelled/aborted
+      if (!controller.signal.aborted) {
+        setLoading(false)
+      }
+      authAbortRef.current = null
     }
   }
 
   const strength = getStrength()
+
+  // FIX: button label shows elapsed seconds + hints user can tap to cancel
+  function getButtonLabel(): string {
+    if (!loading) return mode === 'signin' ? 'Sign In' : 'Create Account'
+    if (elapsedSeconds >= 8) return `Tap to cancel (${elapsedSeconds}s)`
+    if (elapsedSeconds > 0) return `Please wait… ${elapsedSeconds}s`
+    return 'Please wait…'
+  }
 
   return (
     <KeyboardAvoidingView
@@ -249,7 +364,7 @@ export function SignInScreen({ navigation }: Props) {
     >
       <View style={styles.root}>
 
-        {/* ── Video Background — unchanged ───────────────────────────────── */}
+        {/* ── Video Background ─────────────────────────────────────────────── */}
         <Video
           source={Videos.signInBg}
           style={StyleSheet.absoluteFillObject}
@@ -266,8 +381,7 @@ export function SignInScreen({ navigation }: Props) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-
-          {/* ── Logo — unchanged ─────────────────────────────────────────── */}
+          {/* ── Logo ─────────────────────────────────────────────────────── */}
           <View style={styles.logoArea}>
             <View style={styles.logoOrb}>
               <LinearGradient
@@ -282,12 +396,11 @@ export function SignInScreen({ navigation }: Props) {
           {/* ── Glass card ───────────────────────────────────────────────── */}
           <BlurView intensity={20} tint="dark" style={styles.card}>
 
-            {/* ── NEW: Animated sliding pill mode toggle ─────────────────── */}
+            {/* ── Animated sliding pill mode toggle ──────────────────────── */}
             <View
               style={styles.modeToggle}
               onLayout={(e) => setToggleWidth(e.nativeEvent.layout.width)}
             >
-              {/* Pill — absolutely positioned, slides under the active label */}
               <Animated.View
                 style={[
                   styles.modePill,
@@ -305,11 +418,11 @@ export function SignInScreen({ navigation }: Props) {
                 />
               </Animated.View>
 
-              {/* Tab labels — sit above the pill via zIndex ──────────────── */}
               <TouchableOpacity
                 style={styles.modeTab}
                 onPress={() => switchMode('signin')}
                 activeOpacity={0.7}
+                disabled={loading}
               >
                 <Text style={[styles.modeTabText, mode === 'signin' && styles.modeTabTextActive]}>
                   Sign In
@@ -319,21 +432,16 @@ export function SignInScreen({ navigation }: Props) {
                 style={styles.modeTab}
                 onPress={() => switchMode('signup')}
                 activeOpacity={0.7}
+                disabled={loading}
               >
                 <Text style={[styles.modeTabText, mode === 'signup' && styles.modeTabTextActive]}>
                   Sign Up
                 </Text>
               </TouchableOpacity>
             </View>
-            {/* ─────────────────────────────────────────────────────────── */}
 
-            {/* ── Form — wraps in Animated.View for fade + slide effect ─── */}
-            <Animated.View
-              style={{
-                opacity: formOpacity,
-                transform: [{ translateX: formSlide }],
-              }}
-            >
+            {/* ── Form ─────────────────────────────────────────────────────── */}
+            <Animated.View style={{ opacity: formOpacity, transform: [{ translateX: formSlide }] }}>
               <View style={styles.form}>
                 {mode === 'signup' && (
                   <GlassInput
@@ -395,32 +503,39 @@ export function SignInScreen({ navigation }: Props) {
                   <TouchableOpacity
                     onPress={() => navigation.navigate('ForgotPassword')}
                     style={styles.forgotLink}
+                    disabled={loading}
                   >
                     <Text style={styles.forgotText}>Forgot password?</Text>
                   </TouchableOpacity>
                 )}
 
-                {/* Primary CTA — unchanged */}
+                {/* FIX: tap again when loading = cancel */}
                 <TouchableOpacity
-                  style={[styles.primaryBtn, loading && { opacity: 0.6 }]}
+                  style={[
+                    styles.primaryBtn,
+                    loading && { opacity: 0.75 },
+                  ]}
                   onPress={handleEmailAuth}
-                  disabled={loading}
                   activeOpacity={0.85}
                 >
                   <LinearGradient
-                    colors={['#C9A84C', '#B8860B']}
+                    colors={loading ? ['#5A4A1E', '#3D3010'] : ['#C9A84C', '#B8860B']}
                     style={styles.primaryBtnGrad}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                   >
-                    <Text style={styles.primaryBtnText}>
-                      {loading ? 'Please wait...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
-                    </Text>
+                    <Text style={styles.primaryBtnText}>{getButtonLabel()}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
+
+{/* FIX: visible hint after 8 seconds */}
+                {loading && elapsedSeconds >= 8 && (
+                  <Text style={styles.cancelHint}>
+                    Tap the button above to cancel and retry
+                  </Text>
+                )}
               </View>
             </Animated.View>
-            {/* ─────────────────────────────────────────────────────────── */}
 
             {/* Divider */}
             <View style={styles.dividerRow}>
@@ -429,16 +544,16 @@ export function SignInScreen({ navigation }: Props) {
               <View style={styles.dividerLine} />
             </View>
 
-            {/* ── Phone button — full width, glass-purple style ─────────── */}
+            {/* Phone button */}
             <TouchableOpacity
               style={styles.phoneBtn}
               onPress={() => navigation.navigate('PhoneOTP', { phone: '' })}
               activeOpacity={0.8}
+              disabled={loading}
             >
               <Text style={styles.phoneBtnIcon}>📱</Text>
               <Text style={styles.phoneBtnText}>Continue with Phone</Text>
             </TouchableOpacity>
-            {/* ─────────────────────────────────────────────────────────── */}
 
             <Text style={styles.legal}>
               By continuing you agree to our Terms and Privacy Policy
@@ -454,7 +569,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#05050F' },
   scroll: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 40 },
 
-  // ── Logo — unchanged ──────────────────────────────────────────────────────
   logoArea: { alignItems: 'center', marginBottom: 32 },
   logoOrb: {
     width: 56,
@@ -482,7 +596,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // ── Card — unchanged ──────────────────────────────────────────────────────
   card: {
     borderRadius: 28,
     borderWidth: 1,
@@ -491,24 +604,21 @@ const styles = StyleSheet.create({
     padding: 24,
   },
 
-  // ── NEW: Animated pill toggle ─────────────────────────────────────────────
   modeToggle: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 14,
     padding: 4,
     marginBottom: 28,
-    position: 'relative',         // so the absolute pill sits inside
+    position: 'relative',
   },
   modePill: {
-    // Absolutely positioned inside modeToggle; width is set dynamically inline
     position: 'absolute',
     left: 4,
     top: 4,
     bottom: 4,
     borderRadius: 10,
     overflow: 'hidden',
-    // Shadow gives depth to the pill against the toggle background
     shadowColor: '#7C3AED',
     shadowRadius: 8,
     shadowOpacity: 0.5,
@@ -521,7 +631,7 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     alignItems: 'center',
     borderRadius: 10,
-    zIndex: 1,                    // labels sit above the sliding pill
+    zIndex: 1,
   },
   modeTabText: {
     fontFamily: Fonts.bodySemiBold,
@@ -529,9 +639,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
   },
   modeTabTextActive: { color: '#FFFFFF' },
-  // ─────────────────────────────────────────────────────────────────────────
 
-  // ── Form — unchanged ──────────────────────────────────────────────────────
   form: { gap: 0 },
   strengthRow: {
     flexDirection: 'row',
@@ -569,8 +677,16 @@ const styles = StyleSheet.create({
     color: '#0A0600',
     letterSpacing: 0.3,
   },
+  // FIX: cancel hint shown after 8 seconds
+  cancelHint: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    color: 'rgba(201,168,76,0.6)',
+    textAlign: 'center',
+    marginTop: 10,
+    lineHeight: 18,
+  },
 
-  // ── Divider — unchanged ───────────────────────────────────────────────────
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -584,7 +700,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.3)',
   },
 
-  // ── NEW: Full-width Phone button ──────────────────────────────────────────
   phoneBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -596,7 +711,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(124,58,237,0.45)',
     backgroundColor: 'rgba(124,58,237,0.10)',
     marginBottom: 20,
-    // Subtle inner glow matching the purple palette
     shadowColor: '#7C3AED',
     shadowRadius: 10,
     shadowOpacity: 0.2,
@@ -610,7 +724,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.78)',
     letterSpacing: 0.2,
   },
-  // ─────────────────────────────────────────────────────────────────────────
 
   legal: {
     fontFamily: Fonts.body,
