@@ -17,8 +17,8 @@ import { Fonts } from '../../constants/fonts'
 import type { HomeStackParams } from '../../navigation/MainNavigator'
 
 const { width } = Dimensions.get('window')
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 
 type Nav = NativeStackNavigationProp<HomeStackParams, 'Home'>
 
@@ -34,60 +34,294 @@ function formatDate(): string {
   return `${DAY_NAMES[d.getDay()]}, ${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
 }
 
-// ─── Score Arc ────────────────────────────────────────────────────────────────
-function ScoreArc({ score }: { score: number }) {
+// ─── Score Circle ─────────────────────────────────────────────────────────────
+function ScoreCircle({ score }: { score: number }) {
   const anim = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
-    Animated.timing(anim, { toValue: score / 100, duration: 1400, useNativeDriver: false, delay: 300 }).start()
+    Animated.timing(anim, {
+      toValue: score / 100,
+      duration: 1400,
+      useNativeDriver: false,
+      delay: 300,
+    }).start()
   }, [score])
 
   const color = score >= 70 ? '#44FF88' : score >= 50 ? '#C9A84C' : '#FF4444'
 
   return (
-    <View style={arc.container}>
-      <View style={arc.track}>
-        <Animated.View style={[arc.fill, {
-          width: anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
-          backgroundColor: color,
-        }]} />
+    <View style={scoreCircle.wrap}>
+      <View style={[scoreCircle.ring, { borderColor: color + '55' }]}>
+        <Text style={[scoreCircle.num, { color }]}>{score}</Text>
+        <Text style={scoreCircle.lbl}>Cosmic</Text>
       </View>
-      <Text style={[arc.score, { color }]}>{score}</Text>
-      <Text style={arc.label}>Cosmic Score</Text>
     </View>
   )
 }
 
-const arc = StyleSheet.create({
-  container: { alignItems: 'center', paddingVertical: 4 },
-  track: {
-    width: '100%',
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginBottom: 10,
+const scoreCircle = StyleSheet.create({
+  wrap: { alignItems: 'center', justifyContent: 'center' },
+  ring: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
-  fill: { height: '100%', borderRadius: 2 },
-  score: {
+  num: {
     fontFamily: Fonts.accentBold,
-    fontSize: 42,
-    letterSpacing: 2,
-    textShadowColor: 'rgba(201,168,76,0.4)',
-    textShadowRadius: 16,
-    textShadowOffset: { width: 0, height: 0 },
+    fontSize: 30,
+    letterSpacing: 1,
   },
-  label: {
+  lbl: {
     fontFamily: Fonts.accent,
-    fontSize: 10,
+    fontSize: 8,
     color: 'rgba(255,255,255,0.35)',
     letterSpacing: 2,
     textTransform: 'uppercase',
+    marginTop: 1,
   },
 })
 
+// ─── Planet Pill ──────────────────────────────────────────────────────────────
+function PlanetPill({ label, color }: { label: string; color: string }) {
+  return (
+    <View style={[pill.wrap, { borderColor: color + '30' }]}>
+      <View style={[pill.dot, { backgroundColor: color }]} />
+      <Text style={pill.text}>{label}</Text>
+    </View>
+  )
+}
+
+const pill = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    marginRight: 6,
+    marginBottom: 6,
+  },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  text: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.65)',
+  },
+})
+
+// ─── Guidance Mini Card ───────────────────────────────────────────────────────
+function GuidanceMini({
+  icon, label, value, color,
+}: {
+  icon: string; label: string; value: string; color: string
+}) {
+  return (
+    <View style={gm.card}>
+      <Text style={[gm.icon, { color }]}>{icon}</Text>
+      <Text style={gm.label}>{label}</Text>
+      <Text style={[gm.value, { color }]}>{value}</Text>
+    </View>
+  )
+}
+
+const gm = StyleSheet.create({
+  card: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(13,13,43,0.6)',
+    padding: 14,
+    alignItems: 'center',
+  },
+  icon: { fontSize: 18, marginBottom: 6 },
+  label: {
+    fontFamily: Fonts.accent,
+    fontSize: 8,
+    color: 'rgba(255,255,255,0.3)',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  value: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+})
+
+// ─── Explore Card (standard) ──────────────────────────────────────────────────
+function ExploreCard({
+  label, sub, symbol, accent, onPress, style,
+}: {
+  label: string; sub: string; symbol: string; accent: string
+  onPress: () => void; style?: object
+}) {
+  return (
+    <TouchableOpacity
+      style={[ec.card, { borderColor: accent + '40' }, style]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      {/* top accent line */}
+      <LinearGradient
+        colors={[accent, 'transparent']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={ec.topLine}
+      />
+      <LinearGradient
+        colors={[accent + '12', 'transparent']}
+        style={StyleSheet.absoluteFillObject}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      {/* subtle orb */}
+      <View style={[ec.orb, { backgroundColor: accent }]} />
+      <Text style={[ec.symbol, { color: accent }]}>{symbol}</Text>
+      <Text style={ec.label}>{label}</Text>
+      <Text style={ec.sub}>{sub}</Text>
+    </TouchableOpacity>
+  )
+}
+
+const ec = StyleSheet.create({
+  card: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(13,13,43,0.6)',
+    position: 'relative',
+  },
+  topLine: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 2,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  orb: {
+    position: 'absolute',
+    bottom: -25,
+    right: -25,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    opacity: 0.1,
+  },
+  symbol: { fontSize: 22, marginBottom: 10 },
+  label: {
+    fontFamily: Fonts.heading,
+    fontSize: 15,
+    color: '#E8E8FF',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  sub: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.35)',
+  },
+})
+
+// ─── Tall Explore Card (My Reading) ──────────────────────────────────────────
+function TallExploreCard({
+  label, sub, symbol, accent, onPress,
+}: {
+  label: string; sub: string; symbol: string; accent: string; onPress: () => void
+}) {
+  return (
+    <TouchableOpacity
+      style={[tec.card, { borderColor: accent + '40' }]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <LinearGradient
+        colors={[accent, 'transparent']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={tec.topLine}
+      />
+      <LinearGradient
+        colors={[accent + '12', 'transparent']}
+        style={StyleSheet.absoluteFillObject}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <View style={[tec.orb, { backgroundColor: accent }]} />
+      <View style={tec.top}>
+        <Text style={[tec.symbol, { color: accent }]}>{symbol}</Text>
+      </View>
+      <View style={tec.bottom}>
+        <Text style={tec.label}>{label}</Text>
+        <Text style={tec.sub}>{sub}</Text>
+        <Text style={[tec.arrow, { color: accent + '80' }]}>→</Text>
+      </View>
+    </TouchableOpacity>
+  )
+}
+
+const tec = StyleSheet.create({
+  card: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(13,13,43,0.6)',
+    position: 'relative',
+    justifyContent: 'space-between',
+  },
+  topLine: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 2,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  orb: {
+    position: 'absolute',
+    bottom: -30,
+    right: -30,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    opacity: 0.12,
+  },
+  top: { flex: 1, justifyContent: 'flex-start' },
+  bottom: {},
+  symbol: { fontSize: 28, marginBottom: 8 },
+  label: {
+    fontFamily: Fonts.heading,
+    fontSize: 15,
+    color: '#E8E8FF',
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  sub: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.35)',
+    marginBottom: 10,
+  },
+  arrow: { fontSize: 20 },
+})
+
 // ─── Identity Card ────────────────────────────────────────────────────────────
-function IdentityCard({ title, lines, accent }: { title: string; lines: string[]; accent: string }) {
+function IdentityCard({
+  title, lines, accent,
+}: {
+  title: string; lines: string[]; accent: string
+}) {
   return (
     <View style={[icard.card, { borderColor: accent + '40' }]}>
       <LinearGradient
@@ -106,11 +340,11 @@ function IdentityCard({ title, lines, accent }: { title: string; lines: string[]
 
 const icard = StyleSheet.create({
   card: {
-    width: 170,
+    width: 140,
     borderRadius: 16,
     borderWidth: 1,
-    padding: 16,
-    marginRight: 12,
+    padding: 14,
+    marginRight: 10,
     overflow: 'hidden',
     backgroundColor: 'rgba(13,13,43,0.7)',
   },
@@ -123,51 +357,16 @@ const icard = StyleSheet.create({
   },
   line: {
     fontFamily: Fonts.body,
-    fontSize: 13,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.8)',
-    marginBottom: 3,
-    lineHeight: 19,
+    marginBottom: 2,
+    lineHeight: 18,
   },
-})
-
-// ─── Quick Access Card ────────────────────────────────────────────────────────
-function QuickCard({ label, sub, symbol, accent, onPress }: {
-  label: string; sub: string; symbol: string; accent: string; onPress: () => void
-}) {
-  return (
-    <TouchableOpacity style={[qcard.card, { borderColor: accent + '35' }]} onPress={onPress} activeOpacity={0.8}>
-      <LinearGradient
-        colors={[accent + '12', 'transparent']}
-        style={StyleSheet.absoluteFillObject}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      />
-      <Text style={[qcard.symbol, { color: accent }]}>{symbol}</Text>
-      <Text style={qcard.label}>{label}</Text>
-      <Text style={qcard.sub}>{sub}</Text>
-    </TouchableOpacity>
-  )
-}
-
-const qcard = StyleSheet.create({
-  card: {
-    flex: 1,
-    borderRadius: 18,
-    borderWidth: 1,
-    padding: 18,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(13,13,43,0.6)',
-    gap: 6,
-  },
-  symbol: { fontSize: 22, marginBottom: 2 },
-  label: { fontFamily: Fonts.heading, fontSize: 14, color: '#E8E8FF', lineHeight: 20 },
-  sub: { fontFamily: Fonts.body, fontSize: 11, color: 'rgba(255,255,255,0.35)', lineHeight: 16 },
 })
 
 // ─── Generating State ─────────────────────────────────────────────────────────
 function GeneratingView({ status, progress }: { status: string; progress: number }) {
   const rotAnim = useRef(new Animated.Value(0)).current
-  const textAnim = useRef(new Animated.Value(1)).current
 
   useEffect(() => {
     Animated.loop(
@@ -210,14 +409,21 @@ const gen = StyleSheet.create({
     borderRadius: 1, overflow: 'hidden', marginBottom: 16,
   },
   fill: { height: '100%', backgroundColor: '#C9A84C', borderRadius: 1 },
-  sub: { fontFamily: Fonts.body, fontSize: 12, color: 'rgba(255,255,255,0.25)', textAlign: 'center', lineHeight: 20 },
+  sub: {
+    fontFamily: Fonts.body, fontSize: 12,
+    color: 'rgba(255,255,255,0.25)', textAlign: 'center', lineHeight: 20,
+  },
 })
 
 // ─── MAIN HOME SCREEN ─────────────────────────────────────────────────────────
 export function HomeScreen() {
   const navigation = useNavigation<Nav>()
   const { profile, birthProfile, signOut } = useAuthStore()
-  const { chartData, reading, dailyScore, isLoading, isGenerating, generationStatus, generationProgress, hasError, initialize } = useReadingStore()
+  const {
+    chartData, reading, dailyScore,
+    isLoading, isGenerating, generationStatus, generationProgress,
+    hasError, initialize,
+  } = useReadingStore()
 
   useEffect(() => {
     if (profile?.id && birthProfile) {
@@ -233,14 +439,18 @@ export function HomeScreen() {
   }
 
   const isReady = chartData && reading && !isLoading && !isGenerating
+  const scoreColor = dailyScore >= 70 ? '#44FF88' : dailyScore >= 50 ? '#C9A84C' : '#FF4444'
 
   return (
     <View style={styles.root}>
+      {/* Background Video */}
       <Video
         source={Videos.homeBg}
         style={StyleSheet.absoluteFillObject}
         resizeMode={ResizeMode.COVER}
-        isLooping shouldPlay isMuted
+        isLooping
+        shouldPlay
+        isMuted
       />
       <LinearGradient
         colors={['rgba(5,5,15,0.3)', 'rgba(5,5,15,0.6)', 'rgba(5,5,15,0.85)']}
@@ -251,17 +461,20 @@ export function HomeScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
+            <Text style={styles.eyebrow}>✦ Your cosmic briefing</Text>
             <Text style={styles.greeting}>
-              {getGreeting()}, {profile?.display_name?.split(' ')[0] || 'Seeker'}
+              {getGreeting()},{'\n'}
+              {profile?.display_name?.split(' ')[0] || 'Seeker'}
             </Text>
             <Text style={styles.dateText}>{formatDate()}</Text>
           </View>
           <TouchableOpacity onPress={handleSignOut} activeOpacity={0.7}>
             <View style={styles.avatar}>
-              <LinearGradient colors={['#C9A84C', '#7C3AED']} style={styles.avatarGrad} />
+              <LinearGradient colors={['#C9A84C', '#7C3AED']} style={StyleSheet.absoluteFillObject} />
               <Text style={styles.avatarLetter}>
                 {(profile?.display_name || 'S')[0].toUpperCase()}
               </Text>
@@ -269,21 +482,48 @@ export function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Cosmic Score Card ────────────────────────────────────────────── */}
-        <BlurView intensity={15} tint="dark" style={styles.scoreCard}>
+        {/* ── Hero Score Card ──────────────────────────────────────────────── */}
+        <BlurView intensity={15} tint="dark" style={styles.heroCard}>
+          {/* top shimmer line */}
+          <LinearGradient
+            colors={['transparent', 'rgba(201,168,76,0.5)', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.heroTopLine}
+          />
           <LinearGradient
             colors={['rgba(201,168,76,0.08)', 'transparent']}
             style={StyleSheet.absoluteFillObject}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           />
-          <View style={styles.scoreBorder} />
-          <ScoreArc score={dailyScore} />
-          {reading && (
-            <Text style={styles.energySummary}>
-              {reading.daily_energy_summary}
-            </Text>
-          )}
+          {/* purple glow orb in corner */}
+          <View style={styles.heroOrb} />
+
+          <View style={styles.heroRow}>
+            <ScoreCircle score={dailyScore} />
+            <View style={styles.heroRight}>
+              {/* planet pills */}
+              <View style={styles.pillRow}>
+                <PlanetPill label="Moon · Pisces" color="#C9A84C" />
+                <PlanetPill label="Venus · Taurus" color="#7C3AED" />
+              </View>
+              {reading && (
+                <Text style={styles.energySummary} numberOfLines={3}>
+                  {reading.daily_energy_summary}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {/* progress bar */}
+          <View style={styles.scoreBarTrack}>
+            <View style={[styles.scoreBarFill, {
+              width: `${dailyScore}%`,
+              backgroundColor: scoreColor,
+            }]} />
+          </View>
+
           {(isGenerating || isLoading) && (
             <GeneratingView status={generationStatus} progress={generationProgress} />
           )}
@@ -294,10 +534,102 @@ export function HomeScreen() {
           )}
         </BlurView>
 
-        {/* ── Identity Strip ───────────────────────────────────────────────── */}
+        {/* ── Today's Guidance — horizontal 3-up ──────────────────────────── */}
+        {isReady && (
+          <>
+            <Text style={styles.sectionLabel}>Today's Guidance</Text>
+            <View style={styles.guidanceRow}>
+              <GuidanceMini
+                icon="✦"
+                label="Favours"
+                value={reading.career_strengths?.[0] || 'Creative work'}
+                color="#44FF88"
+              />
+              <View style={styles.guidanceSpacer} />
+              <GuidanceMini
+                icon="△"
+                label="Caution"
+                value={dailyScore < 55 ? 'Financial calls' : 'Impulsive talk'}
+                color="#FF6B6B"
+              />
+              <View style={styles.guidanceSpacer} />
+              <GuidanceMini
+                icon="◷"
+                label="Peak Hours"
+                value={new Date().getHours() < 12 ? '10–12 AM' : '3–5 PM'}
+                color="#C9A84C"
+              />
+            </View>
+          </>
+        )}
+
+        {/* ── Explore — asymmetric grid ────────────────────────────────────── */}
+        <Text style={styles.sectionLabel}>Explore</Text>
+
+        {/* Row 1: tall Reading card + right column */}
+        <View style={styles.exploreTop}>
+          <TallExploreCard
+            label="My Reading"
+            sub="Full life analysis"
+            symbol="◈"
+            accent="#C9A84C"
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+              navigation.navigate('Reading')
+            }}
+          />
+          <View style={styles.exploreRightCol}>
+            <ExploreCard
+              label="My Charts"
+              sub="Visual star maps"
+              symbol="◎"
+              accent="#7B2FBE"
+              onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+            />
+            <ExploreCard
+              label="Ask Zephyra"
+              sub="AI oracle chat"
+              symbol="◉"
+              accent="#2FBEBE"
+              onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              style={{ marginTop: 12 }}
+            />
+          </View>
+        </View>
+
+        {/* Row 2: full-width Forecast */}
+        <TouchableOpacity
+          style={styles.forecastCard}
+          onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+          activeOpacity={0.8}
+        >
+          <LinearGradient
+            colors={['#44FF88', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.forecastTopLine}
+          />
+          <LinearGradient
+            colors={['rgba(68,255,136,0.08)', 'transparent']}
+            style={StyleSheet.absoluteFillObject}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          />
+          <View style={[styles.forecastOrb, { backgroundColor: '#44FF88' }]} />
+          <View style={styles.forecastInner}>
+            <View>
+              <Text style={[styles.forecastSymbol, { color: '#44FF88' }]}>◐</Text>
+              <Text style={styles.forecastLabel}>Monthly Forecast</Text>
+              <Text style={styles.forecastSub}>Your month ahead, mapped</Text>
+            </View>
+            <Text style={styles.forecastArrow}>→</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* ── Cosmic Identity strip ────────────────────────────────────────── */}
         {chartData && (
           <>
-            <Text style={styles.sectionLabel}>Your Cosmic Identity</Text>
+            <Text style={styles.sectionLabel}>Cosmic Identity</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -306,9 +638,9 @@ export function HomeScreen() {
               <IdentityCard
                 title="Western"
                 lines={[
-                  `${chartData.western.sunSign} Sun`,
-                  `${chartData.western.moonSign} Moon`,
-                  `${chartData.western.ascendant} Rising`,
+                  `☉ ${chartData.western.sunSign} Sun`,
+                  `☽ ${chartData.western.moonSign} Moon`,
+                  `↑ ${chartData.western.ascendant} Rising`,
                 ]}
                 accent="#C9A84C"
               />
@@ -324,7 +656,7 @@ export function HomeScreen() {
               <IdentityCard
                 title="Chinese"
                 lines={[
-                  `${chartData.chinese.animal}`,
+                  chartData.chinese.animal,
                   `${chartData.chinese.element} · ${chartData.chinese.polarity}`,
                   `Day: ${chartData.chinese.dayStem.split(' ')[0]}`,
                 ]}
@@ -360,85 +692,6 @@ export function HomeScreen() {
           </>
         )}
 
-        {/* ── Today's Guidance ────────────────────────────────────────────── */}
-        {isReady && (
-          <>
-            <Text style={styles.sectionLabel}>Today's Guidance</Text>
-            <BlurView intensity={15} tint="dark" style={styles.guidanceCard}>
-              <View style={styles.guidanceRow}>
-                <Text style={styles.guidanceDot}>▸</Text>
-                <View style={styles.guidanceText}>
-                  <Text style={styles.guidanceLabel}>Favorable for</Text>
-                  <Text style={styles.guidanceValue}>
-                    {reading.career_strengths?.[0] || 'Creative expression and planning'}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.guidanceDivider} />
-              <View style={styles.guidanceRow}>
-                <Text style={[styles.guidanceDot, { color: '#FF6B6B' }]}>▸</Text>
-                <View style={styles.guidanceText}>
-                  <Text style={styles.guidanceLabel}>Approach with care</Text>
-                  <Text style={styles.guidanceValue}>
-                    {dailyScore < 55 ? 'Major financial decisions today' : 'Impulsive reactions under pressure'}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.guidanceDivider} />
-              <View style={styles.guidanceRow}>
-                <Text style={[styles.guidanceDot, { color: '#44FF88' }]}>▸</Text>
-                <View style={styles.guidanceText}>
-                  <Text style={styles.guidanceLabel}>Best hours today</Text>
-                  <Text style={styles.guidanceValue}>
-                    {new Date().getHours() < 12 ? '10:00 AM – 12:00 PM' : '3:00 PM – 5:00 PM'}
-                  </Text>
-                </View>
-              </View>
-            </BlurView>
-          </>
-        )}
-
-        {/* ── Quick Access Grid ────────────────────────────────────────────── */}
-        <Text style={styles.sectionLabel}>Explore</Text>
-        <View style={styles.gridRow}>
-          <QuickCard
-            label="My Reading"
-            sub="Full life analysis"
-            symbol="◈"
-            accent="#C9A84C"
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
-              navigation.navigate('Reading')
-            }}
-          />
-          <View style={styles.gridSpacer} />
-          <QuickCard
-            label="My Charts"
-            sub="Visual star maps"
-            symbol="◎"
-            accent="#7B2FBE"
-            onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-          />
-        </View>
-        <View style={[styles.gridRow, { marginTop: 12 }]}>
-          <QuickCard
-            label="Ask Zephyra"
-            sub="AI oracle chat"
-            symbol="◉"
-            accent="#2FBEBE"
-            onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-          />
-          <View style={styles.gridSpacer} />
-          <QuickCard
-            label="Forecast"
-            sub="Month ahead"
-            symbol="◐"
-            accent="#44FF88"
-            onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-          />
-        </View>
-
-        {/* Bottom padding for tab bar */}
         <View style={{ height: 90 }} />
       </ScrollView>
     </View>
@@ -449,67 +702,103 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#05050F' },
   scroll: { paddingHorizontal: 20, paddingTop: 60 },
 
-  // Header
+  // ── Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 24,
   },
   headerLeft: { flex: 1 },
+  eyebrow: {
+    fontFamily: Fonts.accent,
+    fontSize: 10,
+    letterSpacing: 3,
+    color: 'rgba(201,168,76,0.55)',
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
   greeting: {
     fontFamily: Fonts.heading,
-    fontSize: 20,
+    fontSize: 24,
     color: '#C9A84C',
-    marginBottom: 4,
+    letterSpacing: 0.5,
+    lineHeight: 30,
+    marginBottom: 5,
   },
   dateText: {
     fontFamily: Fonts.body,
     fontSize: 13,
-    color: 'rgba(255,255,255,0.4)',
+    color: 'rgba(255,255,255,0.35)',
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.4)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(201,168,76,0.35)',
   },
-  avatarGrad: { ...StyleSheet.absoluteFillObject },
   avatarLetter: {
-    position: 'absolute',
     fontFamily: Fonts.heading,
     fontSize: 18,
     color: '#05050F',
     zIndex: 1,
   },
 
-  // Score card
-  scoreCard: {
+  // ── Hero score card
+  heroCard: {
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.15)',
+    borderColor: 'rgba(201,168,76,0.18)',
     overflow: 'hidden',
     padding: 24,
-    marginBottom: 28,
+    marginBottom: 16,
     position: 'relative',
   },
-  scoreBorder: {
+  heroTopLine: {
     position: 'absolute',
     top: 0, left: 0, right: 0,
     height: 1,
-    backgroundColor: 'rgba(201,168,76,0.25)',
+  },
+  heroOrb: {
+    position: 'absolute',
+    top: -30, right: -30,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(124,58,237,0.18)',
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+    marginBottom: 16,
+  },
+  heroRight: { flex: 1 },
+  pillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 8,
   },
   energySummary: {
     fontFamily: Fonts.mystical,
-    fontSize: 14,
+    fontSize: 13,
     color: 'rgba(255,255,255,0.5)',
-    textAlign: 'center',
-    marginTop: 12,
-    lineHeight: 22,
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
+  scoreBarTrack: {
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  scoreBarFill: {
+    height: '100%',
+    borderRadius: 2,
   },
   errorText: {
     fontFamily: Fonts.body,
@@ -520,53 +809,84 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Identity strip
+  // ── Guidance row
   sectionLabel: {
     fontFamily: Fonts.accent,
     fontSize: 10,
-    color: 'rgba(255,255,255,0.3)',
+    color: 'rgba(255,255,255,0.28)',
     letterSpacing: 2,
     textTransform: 'uppercase',
-    marginBottom: 14,
+    marginBottom: 12,
+    marginTop: 22,
   },
-  identityScroll: {
-    paddingRight: 20,
-    marginBottom: 28,
+  guidanceRow: {
+    flexDirection: 'row',
+    marginBottom: 0,
+  },
+  guidanceSpacer: { width: 10 },
+
+  // ── Explore grid
+  exploreTop: {
+    flexDirection: 'row',
+    gap: 12,
+    height: 220,
+  },
+  exploreRightCol: {
+    flex: 1,
+    flexDirection: 'column',
   },
 
-  // Guidance card
-  guidanceCard: {
+  // Forecast full-width card
+  forecastCard: {
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    borderColor: 'rgba(68,255,136,0.25)',
+    backgroundColor: 'rgba(13,13,43,0.6)',
     overflow: 'hidden',
+    marginTop: 12,
+    position: 'relative',
+  },
+  forecastTopLine: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    height: 2,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  forecastOrb: {
+    position: 'absolute',
+    right: -20,
+    top: -20,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    opacity: 0.1,
+  },
+  forecastInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 20,
-    marginBottom: 28,
   },
-  guidanceRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  guidanceDot: { fontSize: 14, color: '#C9A84C', marginTop: 2 },
-  guidanceText: { flex: 1 },
-  guidanceLabel: {
-    fontFamily: Fonts.accent,
-    fontSize: 9,
-    color: 'rgba(255,255,255,0.3)',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-    marginBottom: 4,
+  forecastSymbol: { fontSize: 22, marginBottom: 8 },
+  forecastLabel: {
+    fontFamily: Fonts.heading,
+    fontSize: 15,
+    color: '#E8E8FF',
+    marginBottom: 3,
   },
-  guidanceValue: {
+  forecastSub: {
     fontFamily: Fonts.body,
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.75)',
-    lineHeight: 20,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.35)',
   },
-  guidanceDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    marginVertical: 14,
+  forecastArrow: {
+    fontSize: 26,
+    color: 'rgba(68,255,136,0.3)',
   },
 
-  // Quick access grid
-  gridRow: { flexDirection: 'row' },
-  gridSpacer: { width: 12 },
+  // ── Identity strip
+  identityScroll: {
+    paddingRight: 20,
+  },
 })
