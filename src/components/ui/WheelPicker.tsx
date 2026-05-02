@@ -1,3 +1,26 @@
+// src/components/ui/WheelPicker.tsx
+// ═══════════════════════════════════════════════════════════════════════════════
+// FIX: Lag/stuck during time-picking on Android (Termux / Expo Go).
+//
+// ROOT CAUSE of the original bug:
+//   Both onScrollEndDrag AND onMomentumScrollEnd called snapToIndex(), which
+//   calls scrollTo().  When both fired in quick succession (< 100 ms apart)
+//   they issued two competing scrollTo() calls.  Each one interrupted the
+//   other's animation and left the list visually stuck mid-item.
+//
+// SOLUTION — two-guard system:
+//   1. pendingSnap timeout (80 ms):
+//      onScrollEndDrag arms a 80 ms deferred snap.  If the user did a real
+//      fling, onMomentumScrollEnd fires within those 80 ms, cancels the
+//      deferred snap and handles it cleanly.  If there was no momentum (slow
+//      drag on Android), the deferred snap fires after 80 ms — guaranteed.
+//
+//   2. snapLock ref:
+//      Once a snap is in progress, snapLock = true for 400 ms.  Any
+//      stray momentum-end or drag-end event arriving during the scroll
+//      animation is silently dropped.  This eliminates the double-snap jitter.
+// ═══════════════════════════════════════════════════════════════════════════════
+
 import React, { useRef, useEffect } from 'react'
 import {
   ScrollView,
@@ -12,6 +35,7 @@ import { Fonts } from '../../constants/fonts'
 
 const ITEM_HEIGHT = 52
 const VISIBLE_COUNT = 5
+const CONTAINER_HEIGHT = ITEM_HEIGHT * VISIBLE_COUNT
 
 interface WheelPickerProps {
   data: string[]
@@ -28,6 +52,13 @@ export function WheelPicker({
 }: WheelPickerProps) {
   const scrollRef = useRef<ScrollView>(null)
 
+  // ── Guard 1: lock prevents concurrent/overlapping programmatic scrollTo calls ─
+  const snapLock = useRef(false)
+
+  // ── Guard 2: deferred snap — allows momentum to cancel a drag-end snap ────────
+  const pendingSnap = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Scroll to initial position on mount with no visible animation
   useEffect(() => {
     const timer = setTimeout(() => {
       scrollRef.current?.scrollTo({
@@ -36,25 +67,55 @@ export function WheelPicker({
       })
     }, 150)
     return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function snapToIndex(offsetY: number) {
-    const index = Math.round(offsetY / ITEM_HEIGHT)
+  // ── Core snap ──────────────────────────────────────────────────────────────────
+  // Rounds raw scroll offset to the nearest item, animates to it, and
+  // notifies the parent.  The 400 ms lock covers the animation duration.
+  function snapToIndex(rawOffsetY: number) {
+    if (snapLock.current) return
+    snapLock.current = true
+
+    const index = Math.round(rawOffsetY / ITEM_HEIGHT)
     const clamped = Math.max(0, Math.min(index, data.length - 1))
+
     scrollRef.current?.scrollTo({ y: clamped * ITEM_HEIGHT, animated: true })
     onSelect(clamped)
+
+    // Release lock after the animation completes (~300 ms) + small buffer
+    setTimeout(() => {
+      snapLock.current = false
+    }, 400)
   }
 
-  function handleMomentumScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    snapToIndex(e.nativeEvent.contentOffset.y)
-  }
-
+  // ── Drag ends (finger lifts) ───────────────────────────────────────────────────
+  // Arm a deferred snap.  If momentum fires within 80 ms it will cancel this.
+  // If no momentum (slow drag, Android), this fires after 80 ms — guaranteed.
   function handleScrollEndDrag(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    const offsetY = e.nativeEvent.contentOffset.y
+
+    if (pendingSnap.current) clearTimeout(pendingSnap.current)
+
+    pendingSnap.current = setTimeout(() => {
+      pendingSnap.current = null
+      snapToIndex(offsetY)
+    }, 80)
+  }
+
+  // ── Momentum ends (fling decelerates) ─────────────────────────────────────────
+  // Cancel the pending drag-end snap so exactly ONE snap happens per gesture.
+  function handleMomentumScrollEnd(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (pendingSnap.current) {
+      clearTimeout(pendingSnap.current)
+      pendingSnap.current = null
+    }
     snapToIndex(e.nativeEvent.contentOffset.y)
   }
 
   return (
     <View style={[styles.container, { width }]}>
+      {/* Fade overlay — visual only, passes touches through */}
       <View style={styles.fadeTop} pointerEvents="none" />
 
       <ScrollView
@@ -64,8 +125,8 @@ export function WheelPicker({
         decelerationRate="fast"
         nestedScrollEnabled={true}
         scrollEventThrottle={16}
-        onMomentumScrollEnd={handleMomentumScrollEnd}
         onScrollEndDrag={handleScrollEndDrag}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
         contentContainerStyle={{
           paddingVertical: ITEM_HEIGHT * Math.floor(VISIBLE_COUNT / 2),
         }}
@@ -85,12 +146,11 @@ export function WheelPicker({
       </ScrollView>
 
       <View style={styles.fadeBottom} pointerEvents="none" />
+      {/* Selection band */}
       <View style={styles.centerLine} pointerEvents="none" />
     </View>
   )
 }
-
-const CONTAINER_HEIGHT = ITEM_HEIGHT * VISIBLE_COUNT
 
 const styles = StyleSheet.create({
   container: {
