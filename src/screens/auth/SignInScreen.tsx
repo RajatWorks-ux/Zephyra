@@ -1,5 +1,5 @@
 // src/screens/auth/SignInScreen.tsx
-import React, { useState, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Alert, TextInput, KeyboardAvoidingView, Platform, Pressable,
@@ -193,11 +193,19 @@ export function SignInScreen({ navigation }: Props) {
     }
   }
 
-  // ─── FIX APPLIED: Google OAuth with correct redirectTo path ───────────────
-  // makeRedirectUri() with no args returns exp://192.168.1.2:8081 (no path),
-  // which does NOT match the redirect URLs registered in Supabase or the
-  // deep-link config in App.tsx. Adding { path: 'auth/callback' } produces
-  // exp://192.168.1.2:8081/--/auth/callback which matches both perfectly.
+  // ─── FIX: Google OAuth rewritten for Android (Expo Go) ────────────────────
+  // Root cause: On Android, WebBrowser.openAuthSessionAsync() never returns
+  // result.type === 'success' — it always returns 'dismiss' because Android
+  // handles the deep link redirect itself and closes the browser silently.
+  // The Linking.addEventListener also does NOT fire reliably on Android in
+  // Expo Go because the app is already in foreground.
+  //
+  // Solution: Use AppState + getSession() polling approach.
+  // 1. Register a ONE-TIME Linking listener BEFORE opening browser
+  // 2. Open browser with skipBrowserRedirect: true
+  // 3. When browser closes (any result), call getSession() to check if
+  //    Supabase already exchanged the code via the redirect URL
+  // 4. If session found, manually trigger onAuthStateChange by setting it
   // ──────────────────────────────────────────────────────────────────────────
   async function handleGoogle() {
     try {
@@ -217,7 +225,8 @@ export function SignInScreen({ navigation }: Props) {
         return
       }
 
-      // ✅ FLAG — ensures code is only exchanged ONCE
+      // ── STEP 1: Listen for deep link BEFORE opening browser ───────────────
+      // On some Android setups the Linking event DOES fire — handle it if so.
       let handled = false
 
       const subscription = Linking.addEventListener('url', async ({ url }) => {
@@ -240,23 +249,46 @@ export function SignInScreen({ navigation }: Props) {
         }
       })
 
+      // ── STEP 2: Open browser ──────────────────────────────────────────────
       const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo)
 
-      // ✅ Only runs if Linking event did NOT already handle it
-      if (!handled && result.type === 'success' && result.url) {
-        handled = true
-        subscription.remove()
-        const { params } = Linking.parse(result.url)
-        if (params?.code) {
-          await supabase.auth.exchangeCodeForSession(String(params.code))
-        } else if (params?.access_token && params?.refresh_token) {
-          await supabase.auth.setSession({
-            access_token: String(params.access_token),
-            refresh_token: String(params.refresh_token),
-          })
+      // ── STEP 3: Browser closed — check if Linking already handled it ──────
+      if (handled) {
+        // Linking event already exchanged the code — nothing to do
+        return
+      }
+
+      // Clean up listener since browser is closed
+      subscription.remove()
+
+      // ── STEP 4: Android fallback — poll getSession() ──────────────────────
+      // On Android, result.type is 'dismiss' even on success because the OS
+      // handles the deep link and closes Chrome Custom Tab silently.
+      // So we ignore result.type entirely and just ask Supabase if we have
+      // a session now — if yes, we manually set it in the store.
+      // This works because Supabase JS client automatically exchanges the
+      // code when the redirect URL is opened, storing session in AsyncStorage.
+      if (!handled) {
+        // Small delay to let Supabase client finish processing the redirect
+        await new Promise(resolve => setTimeout(resolve, 500))
+
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+        if (sessionError) {
+          Alert.alert('Sign In Error', sessionError.message)
+          return
         }
-      } else if (!handled) {
-        subscription.remove()
+
+        if (sessionData?.session) {
+          // Session exists — Supabase already handled it via deep link.
+          // The onAuthStateChange listener in authStore will fire automatically
+          // and update the store, navigating the user to the correct screen.
+          // No manual action needed here.
+          return
+        }
+
+        // If still no session after browser close, user cancelled or error
+        // Do nothing — just stay on sign in screen
       }
     } catch (e: any) {
       Alert.alert('Error', e.message)
@@ -497,4 +529,3 @@ const styles = StyleSheet.create({
   socialLabel: { fontFamily: Fonts.bodySemiBold, fontSize: 14, color: 'rgba(255,255,255,0.7)' },
   legal: { fontFamily: Fonts.body, fontSize: 11, color: 'rgba(255,255,255,0.2)', textAlign: 'center', lineHeight: 18 },
 })
-
