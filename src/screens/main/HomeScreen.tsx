@@ -1,3 +1,27 @@
+// src/screens/main/HomeScreen.tsx
+// ═══════════════════════════════════════════════════════════════════════════════
+// FIXES APPLIED:
+//
+// 1. "Home screen overlapping UI — elements stacking on each other"
+//    ROOT CAUSE: heroRow (score + pills + summary) and scoreBarTrack always
+//    rendered even when GeneratingView was also rendering inside the same card.
+//    Result: score circle + progress bar + spinning orb all stacked.
+//    FIX: heroRow and scoreBarTrack are now hidden while isGenerating || isLoading.
+//    GeneratingView fills the heroCard exclusively during generation.
+//
+// 2. "72 hardcoded — should show what AI actually returned"
+//    ROOT CAUSE: dailyScore initial value in readingStore was 72.
+//    FIX: readingStore now starts at 0 and updates from AI's daily_score_base.
+//    ScoreCircle now renders "--" when score === 0 (not yet loaded).
+//
+// 3. Design matches Images 4 & 5 (asymmetric grid, guidance row, identity strip)
+//    while keeping original colors (#C9A84C gold, #7C3AED purple), fonts,
+//    background video, and BlurView effects.
+//
+// 4. exploreTop had a fixed height: 220 causing card content to be clipped on
+//    smaller/larger screens. Removed fixed height — cards now size to content.
+// ═══════════════════════════════════════════════════════════════════════════════
+
 import React, { useEffect, useRef } from 'react'
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -34,11 +58,13 @@ function formatDate(): string {
   return `${DAY_NAMES[d.getDay()]}, ${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
 }
 
-// ─── Score Circle ─────────────────────────────────────────────────────────────
+// ─── Score Circle ──────────────────────────────────────────────────────────────
+// FIX: shows "--" when score is 0 (not yet loaded from AI)
 function ScoreCircle({ score }: { score: number }) {
   const anim = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
+    if (score === 0) return
     Animated.timing(anim, {
       toValue: score / 100,
       duration: 1400,
@@ -47,12 +73,18 @@ function ScoreCircle({ score }: { score: number }) {
     }).start()
   }, [score])
 
-  const color = score >= 70 ? '#44FF88' : score >= 50 ? '#C9A84C' : '#FF4444'
+  const color = score === 0
+    ? 'rgba(255,255,255,0.2)'
+    : score >= 70 ? '#44FF88'
+    : score >= 50 ? '#C9A84C'
+    : '#FF4444'
 
   return (
     <View style={scoreCircle.wrap}>
       <View style={[scoreCircle.ring, { borderColor: color + '55' }]}>
-        <Text style={[scoreCircle.num, { color }]}>{score}</Text>
+        <Text style={[scoreCircle.num, { color }]}>
+          {score === 0 ? '--' : score}
+        </Text>
         <Text style={scoreCircle.lbl}>Cosmic</Text>
       </View>
     </View>
@@ -85,7 +117,7 @@ const scoreCircle = StyleSheet.create({
   },
 })
 
-// ─── Planet Pill ──────────────────────────────────────────────────────────────
+// ─── Planet Pill ───────────────────────────────────────────────────────────────
 function PlanetPill({ label, color }: { label: string; color: string }) {
   return (
     <View style={[pill.wrap, { borderColor: color + '30' }]}>
@@ -116,7 +148,7 @@ const pill = StyleSheet.create({
   },
 })
 
-// ─── Guidance Mini Card ───────────────────────────────────────────────────────
+// ─── Guidance Mini Card ────────────────────────────────────────────────────────
 function GuidanceMini({
   icon, label, value, color,
 }: {
@@ -159,7 +191,7 @@ const gm = StyleSheet.create({
   },
 })
 
-// ─── Explore Card (standard) ──────────────────────────────────────────────────
+// ─── Explore Card (standard) ───────────────────────────────────────────────────
 function ExploreCard({
   label, sub, symbol, accent, onPress, style,
 }: {
@@ -172,7 +204,6 @@ function ExploreCard({
       onPress={onPress}
       activeOpacity={0.8}
     >
-      {/* top accent line */}
       <LinearGradient
         colors={[accent, 'transparent']}
         start={{ x: 0, y: 0 }}
@@ -185,7 +216,6 @@ function ExploreCard({
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
-      {/* subtle orb */}
       <View style={[ec.orb, { backgroundColor: accent }]} />
       <Text style={[ec.symbol, { color: accent }]}>{symbol}</Text>
       <Text style={ec.label}>{label}</Text>
@@ -234,7 +264,7 @@ const ec = StyleSheet.create({
   },
 })
 
-// ─── Tall Explore Card (My Reading) ──────────────────────────────────────────
+// ─── Tall Explore Card (My Reading) ───────────────────────────────────────────
 function TallExploreCard({
   label, sub, symbol, accent, onPress,
 }: {
@@ -280,6 +310,7 @@ const tec = StyleSheet.create({
     backgroundColor: 'rgba(13,13,43,0.6)',
     position: 'relative',
     justifyContent: 'space-between',
+    minHeight: 200, // FIX: minHeight instead of fixed height so content isn't clipped
   },
   topLine: {
     position: 'absolute',
@@ -316,7 +347,7 @@ const tec = StyleSheet.create({
   arrow: { fontSize: 20 },
 })
 
-// ─── Identity Card ────────────────────────────────────────────────────────────
+// ─── Identity Card ─────────────────────────────────────────────────────────────
 function IdentityCard({
   title, lines, accent,
 }: {
@@ -364,8 +395,20 @@ const icard = StyleSheet.create({
   },
 })
 
-// ─── Generating State ─────────────────────────────────────────────────────────
-function GeneratingView({ status, progress, oraclesActive }: { status: string; progress: number; oraclesActive: number }) {
+// ─── Generating State ──────────────────────────────────────────────────────────
+// Shows live AI progress — status text, oracle dots, progress bar.
+// chaptersDone is the NEW field from readingStore that counts finished AI chunks.
+function GeneratingView({
+  status,
+  progress,
+  oraclesActive,
+  chaptersDone,
+}: {
+  status: string
+  progress: number
+  oraclesActive: number
+  chaptersDone: number
+}) {
   const rotAnim = useRef(new Animated.Value(0)).current
   const rotAnim2 = useRef(new Animated.Value(0)).current
 
@@ -381,87 +424,153 @@ function GeneratingView({ status, progress, oraclesActive }: { status: string; p
   const rotate = rotAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] })
   const rotateReverse = rotAnim2.interpolate({ inputRange: [0, 1], outputRange: ['360deg', '0deg'] })
 
-  const totalOracles = 5
-  const doneOracles = totalOracles - oraclesActive
+  const TOTAL_ORACLES = 5
 
   return (
     <View style={gen.container}>
+      {/* Spinning orb */}
       <View style={gen.orbWrap}>
         <Animated.View style={[gen.ringOuter, { transform: [{ rotate: rotateReverse }] }]} />
         <Animated.View style={[gen.ring, { transform: [{ rotate }] }]} />
         <LinearGradient colors={['#C9A84C', '#7C3AED']} style={gen.orb} />
       </View>
 
+      {/* Oracle dots — green = done, gold = active */}
       <View style={gen.oracleRow}>
-        {Array.from({ length: totalOracles }).map((_, i) => (
+        {Array.from({ length: TOTAL_ORACLES }).map((_, i) => (
           <View
             key={i}
             style={[
               gen.oracleDot,
-              i < doneOracles ? gen.oracleDotDone : gen.oracleDotActive,
+              i < chaptersDone ? gen.oracleDotDone : gen.oracleDotActive,
             ]}
           />
         ))}
       </View>
+
+      {/* NEW: live chapter count */}
+      <Text style={gen.chapterCount}>
+        {chaptersDone > 0
+          ? `${chaptersDone} of ${TOTAL_ORACLES} chapters written`
+          : 'Consulting the oracles…'}
+      </Text>
+
+      {/* Oracle status label */}
       <Text style={gen.oracleLabel}>
         {oraclesActive > 0
           ? `${oraclesActive} oracle${oraclesActive !== 1 ? 's' : ''} channeling in parallel`
-          : 'All 5 oracles complete — merging...'}
+          : 'All 5 oracles complete — merging…'}
       </Text>
 
+      {/* Status message from AI service */}
       <Text style={gen.status}>{status}</Text>
-      <View style={gen.bar}>
-        <View style={[gen.fill, { width: `${progress}%` }]} />
+
+      {/* Progress bar with % */}
+      <View style={gen.barRow}>
+        <View style={gen.bar}>
+          <View style={[gen.fill, { width: `${Math.min(progress, 100)}%` }]} />
+        </View>
+        <Text style={gen.pct}>{Math.min(Math.round(progress), 100)}%</Text>
       </View>
-      <Text style={gen.sub}>5 AI oracles working simultaneously. Usually ready in 60–90 seconds.</Text>
+
+      <Text style={gen.sub}>
+        5 AI oracles working simultaneously. Usually ready in 60–90 seconds.
+      </Text>
     </View>
   )
 }
 
 const gen = StyleSheet.create({
-  container: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 24 },
-  orbWrap: { width: 80, height: 80, alignItems: 'center', justifyContent: 'center', marginBottom: 28 },
+  container: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+  },
+  orbWrap: {
+    width: 80,
+    height: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
   ring: {
     position: 'absolute', width: 80, height: 80, borderRadius: 40,
     borderWidth: 2, borderColor: '#C9A84C', borderTopColor: 'transparent',
     borderRightColor: 'rgba(201,168,76,0.3)',
   },
   orb: { width: 50, height: 50, borderRadius: 25 },
-  status: {
-    fontFamily: Fonts.mystical, fontSize: 15,
-    color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginBottom: 20, lineHeight: 24,
-  },
-  bar: {
-    width: '100%', height: 2, backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 1, overflow: 'hidden', marginBottom: 16,
-  },
-  fill: { height: '100%', backgroundColor: '#C9A84C', borderRadius: 1 },
-  sub: {
-    fontFamily: Fonts.body, fontSize: 12,
-    color: 'rgba(255,255,255,0.25)', textAlign: 'center', lineHeight: 20,
-  },
   ringOuter: {
     position: 'absolute', width: 88, height: 88, borderRadius: 44,
     borderWidth: 1, borderColor: 'rgba(124,58,237,0.5)', borderBottomColor: 'transparent',
   },
-  oracleRow: { flexDirection: 'row', gap: 8, marginBottom: 8, marginTop: 4 },
-  oracleDot: { width: 8, height: 8, borderRadius: 4 },
-  oracleDotActive: { backgroundColor: '#C9A84C' },
-  oracleDotDone: { backgroundColor: 'rgba(68,255,136,0.7)' },
+  oracleRow: { flexDirection: 'row', gap: 8, marginBottom: 6 },
+  oracleDot: { width: 10, height: 10, borderRadius: 5 },
+  oracleDotActive: { backgroundColor: 'rgba(201,168,76,0.35)' },
+  oracleDotDone: { backgroundColor: '#44FF88' },
+  // NEW: chapter counter — prominent and clear
+  chapterCount: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 14,
+    color: '#44FF88',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
   oracleLabel: {
-    fontFamily: Fonts.body, fontSize: 11,
-    color: 'rgba(255,255,255,0.35)', textAlign: 'center', marginBottom: 16,
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.35)',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  status: {
+    fontFamily: Fonts.mystical,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.55)',
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 22,
+    fontStyle: 'italic',
+  },
+  barRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  bar: {
+    flex: 1,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  fill: { height: '100%', backgroundColor: '#C9A84C', borderRadius: 2 },
+  // NEW: percentage label beside bar
+  pct: {
+    fontFamily: Fonts.accentBold,
+    fontSize: 12,
+    color: '#C9A84C',
+    width: 34,
+    textAlign: 'right',
+  },
+  sub: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.22)',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 })
 
-// ─── MAIN HOME SCREEN ─────────────────────────────────────────────────────────
+// ─── MAIN HOME SCREEN ──────────────────────────────────────────────────────────
 export function HomeScreen() {
   const navigation = useNavigation<Nav>()
   const { profile, birthProfile, signOut } = useAuthStore()
   const {
     chartData, reading, dailyScore,
     isLoading, isGenerating, generationStatus, generationProgress,
-    hasError, parallelOraclesActive, initialize,
+    hasError, parallelOraclesActive, chaptersDone, initialize,
   } = useReadingStore()
 
   useEffect(() => {
@@ -478,11 +587,18 @@ export function HomeScreen() {
   }
 
   const isReady = chartData && reading && !isLoading && !isGenerating
-  const scoreColor = dailyScore >= 70 ? '#44FF88' : dailyScore >= 50 ? '#C9A84C' : '#FF4444'
+  const isWorking = isGenerating || isLoading
+
+  // Derive score color — transparent when score not yet available
+  const scoreColor = dailyScore === 0
+    ? 'rgba(255,255,255,0.1)'
+    : dailyScore >= 70 ? '#44FF88'
+    : dailyScore >= 50 ? '#C9A84C'
+    : '#FF4444'
 
   return (
     <View style={styles.root}>
-      {/* Background Video */}
+      {/* Background Video — unchanged */}
       <Video
         source={Videos.homeBg}
         style={StyleSheet.absoluteFillObject}
@@ -500,8 +616,7 @@ export function HomeScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-
-        {/* ── Header ──────────────────────────────────────────────────────── */}
+        {/* ── Header ────────────────────────────────────────────────────────── */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.eyebrow}>✦ Your cosmic briefing</Text>
@@ -521,9 +636,8 @@ export function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Hero Score Card ──────────────────────────────────────────────── */}
+        {/* ── Hero Score Card ────────────────────────────────────────────────── */}
         <BlurView intensity={15} tint="dark" style={styles.heroCard}>
-          {/* top shimmer line */}
           <LinearGradient
             colors={['transparent', 'rgba(201,168,76,0.5)', 'transparent']}
             start={{ x: 0, y: 0 }}
@@ -536,40 +650,52 @@ export function HomeScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           />
-          {/* purple glow orb in corner */}
           <View style={styles.heroOrb} />
 
-          <View style={styles.heroRow}>
-            <ScoreCircle score={dailyScore} />
-            <View style={styles.heroRight}>
-              {/* planet pills */}
-              <View style={styles.pillRow}>
-                <PlanetPill label="Moon · Pisces" color="#C9A84C" />
-                <PlanetPill label="Venus · Taurus" color="#7C3AED" />
+          {/*
+            FIX: heroRow + scoreBar are HIDDEN while generating to prevent
+            the score circle from stacking on top of GeneratingView.
+            They only appear when the reading is ready OR there's an error.
+          */}
+          {!isWorking && (
+            <>
+              <View style={styles.heroRow}>
+                <ScoreCircle score={dailyScore} />
+                <View style={styles.heroRight}>
+                  <View style={styles.pillRow}>
+                    <PlanetPill label="Moon · Pisces" color="#C9A84C" />
+                    <PlanetPill label="Venus · Taurus" color="#7C3AED" />
+                  </View>
+                  {reading && (
+                    <Text style={styles.energySummary} numberOfLines={3}>
+                      {reading.daily_energy_summary}
+                    </Text>
+                  )}
+                </View>
               </View>
-              {reading && (
-                <Text style={styles.energySummary} numberOfLines={3}>
-                  {reading.daily_energy_summary}
-                </Text>
+
+              {/* Progress bar (only when reading is available) */}
+              {dailyScore > 0 && (
+                <View style={styles.scoreBarTrack}>
+                  <View style={[styles.scoreBarFill, {
+                    width: `${dailyScore}%`,
+                    backgroundColor: scoreColor,
+                  }]} />
+                </View>
               )}
-            </View>
-          </View>
+            </>
+          )}
 
-          {/* progress bar */}
-          <View style={styles.scoreBarTrack}>
-            <View style={[styles.scoreBarFill, {
-              width: `${dailyScore}%`,
-              backgroundColor: scoreColor,
-            }]} />
-          </View>
-
-          {(isGenerating || isLoading) && (
+          {/* GeneratingView fills the card exclusively during generation */}
+          {isWorking && (
             <GeneratingView
               status={generationStatus}
               progress={generationProgress}
               oraclesActive={parallelOraclesActive}
+              chaptersDone={chaptersDone}
             />
           )}
+
           {hasError && (
             <Text style={styles.errorText}>
               Could not generate reading. Check your connection and restart the app.
@@ -577,7 +703,7 @@ export function HomeScreen() {
           )}
         </BlurView>
 
-        {/* ── Today's Guidance — horizontal 3-up ──────────────────────────── */}
+        {/* ── Today's Guidance — horizontal 3-up mini cards ─────────────────── */}
         {isReady && (
           <>
             <Text style={styles.sectionLabel}>Today's Guidance</Text>
@@ -605,10 +731,11 @@ export function HomeScreen() {
             </View>
           </>
         )}
-{/* ── Explore — asymmetric grid ────────────────────────────────────── */}
+
+        {/* ── Explore — asymmetric grid (matches Images 4 & 5) ─────────────── */}
         <Text style={styles.sectionLabel}>Explore</Text>
 
-        {/* Row 1: tall Reading card + right column */}
+        {/* Row 1: tall Reading card on left, Charts + Ask Zephyra stacked right */}
         <View style={styles.exploreTop}>
           <TallExploreCard
             label="My Reading"
@@ -639,7 +766,7 @@ export function HomeScreen() {
           </View>
         </View>
 
-        {/* Row 2: full-width Forecast */}
+        {/* Row 2: full-width Forecast banner */}
         <TouchableOpacity
           style={styles.forecastCard}
           onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
@@ -668,7 +795,7 @@ export function HomeScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* ── Cosmic Identity strip ────────────────────────────────────────── */}
+        {/* ── Cosmic Identity strip ──────────────────────────────────────────── */}
         {chartData && (
           <>
             <Text style={styles.sectionLabel}>Cosmic Identity</Text>
@@ -744,7 +871,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#05050F' },
   scroll: { paddingHorizontal: 20, paddingTop: 60 },
 
-  // ── Header
+  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -790,7 +917,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
 
-  // ── Hero score card
+  // Hero score card
   heroCard: {
     borderRadius: 24,
     borderWidth: 1,
@@ -851,7 +978,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // ── Guidance row
+  // Section label
   sectionLabel: {
     fontFamily: Fonts.accent,
     fontSize: 10,
@@ -861,17 +988,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 22,
   },
+
+  // Guidance row
   guidanceRow: {
     flexDirection: 'row',
     marginBottom: 0,
   },
   guidanceSpacer: { width: 10 },
 
-  // ── Explore grid
+  // FIX: removed fixed height: 220 — cards now size to their content
   exploreTop: {
     flexDirection: 'row',
     gap: 12,
-    height: 220,
   },
   exploreRightCol: {
     flex: 1,
@@ -927,9 +1055,8 @@ const styles = StyleSheet.create({
     color: 'rgba(68,255,136,0.3)',
   },
 
-  // ── Identity strip
+  // Identity strip
   identityScroll: {
     paddingRight: 20,
   },
 })
-    
