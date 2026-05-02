@@ -13,6 +13,7 @@ interface ReadingState {
   generationStatus: string
   generationProgress: number
   hasError: boolean
+  parallelOraclesActive: number   // how many of the 5 oracles are still running
 
   initialize: (userId: string, birthProfile: BirthProfile) => Promise<void>
   reset: () => void
@@ -27,6 +28,7 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
   generationStatus: '',
   generationProgress: 0,
   hasError: false,
+  parallelOraclesActive: 0,
 
   initialize: async (userId: string, birthProfile: BirthProfile) => {
     if (get().chartData) return // Already loaded
@@ -55,16 +57,30 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
         }
       }
 
-      // 3. No existing reading — generate one
-      set({ isLoading: false, isGenerating: true, generationStatus: 'Preparing your cosmic profile...', generationProgress: 5 })
+      // 3. No existing reading — fire all 5 parallel oracles simultaneously
+      set({
+        isLoading: false,
+        isGenerating: true,
+        parallelOraclesActive: 5,
+        generationStatus: 'Awakening 5 cosmic oracles simultaneously...',
+        generationProgress: 5,
+      })
 
       const parsed = await generateFullReading(
         chartData,
-        (status, progress) => set({ generationStatus: status, generationProgress: progress })
+        (status, progress) => {
+          // Count completions from progress increments (each chunk = +16 progress after 12)
+          const oraclesRemaining = Math.max(0, Math.ceil((92 - progress) / 16))
+          set({
+            generationStatus: status,
+            generationProgress: progress,
+            parallelOraclesActive: oraclesRemaining,
+          })
+        }
       )
 
       if (parsed) {
-        // Save to Supabase
+        // Save complete merged reading to Supabase
         await supabase.from('readings').upsert({
           user_id: userId,
           full_reading_text: JSON.stringify(parsed),
@@ -77,18 +93,30 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
           updated_at: new Date().toISOString(),
         })
 
-        set({ reading: parsed, isGenerating: false, generationProgress: 100 })
+        set({
+          reading: parsed,
+          isGenerating: false,
+          parallelOraclesActive: 0,
+          generationProgress: 100,
+        })
       } else {
-        set({ isGenerating: false, hasError: true })
+        set({ isGenerating: false, parallelOraclesActive: 0, hasError: true })
       }
     } catch (error) {
       console.error('Reading store error:', error)
-      set({ isLoading: false, isGenerating: false, hasError: true })
+      set({ isLoading: false, isGenerating: false, parallelOraclesActive: 0, hasError: true })
     }
   },
 
   reset: () => set({
-    chartData: null, reading: null, isLoading: false,
-    isGenerating: false, hasError: false, generationStatus: '', generationProgress: 0,
+    chartData: null,
+    reading: null,
+    isLoading: false,
+    isGenerating: false,
+    hasError: false,
+    generationStatus: '',
+    generationProgress: 0,
+    parallelOraclesActive: 0,
   }),
 }))
+          
