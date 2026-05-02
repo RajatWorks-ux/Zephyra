@@ -209,8 +209,7 @@ export function SignInScreen({ navigation }: Props) {
   // ──────────────────────────────────────────────────────────────────────────
   async function handleGoogle() {
     try {
-      const redirectTo = AuthSession.makeRedirectUri({ path: 'auth/callback' })
-
+      const redirectTo = 'exp://localhost:8081/--/auth/callback'
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
