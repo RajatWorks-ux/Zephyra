@@ -4,24 +4,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { AppState } from 'react-native'
 import * as Crypto from 'expo-crypto'
 
-// ─── FIX: WebCrypto polyfill for Expo Go ──────────────────────────────────────
-// Expo Go does not support the WebCrypto API, which Supabase PKCE flow needs
-// to generate sha256 code challenges. Without this, it silently falls back to
-// "plain" and token exchange fails — causing Google OAuth to redirect back to
-// the sign-in screen even after a successful login.
-// This polyfill uses expo-crypto to provide the required subtle.digest method
-// AND getRandomValues — both are needed for PKCE to work correctly.
+// ─── WebCrypto polyfill for Expo Go ───────────────────────────────────────────
+// Expo Go does not expose the WebCrypto API that Supabase's PKCE flow needs
+// in order to generate SHA-256 code challenges and random state values.
+// Without this polyfill the client silently falls back to "plain" PKCE,
+// causing email verification deep-links to fail on redirect.
+// expo-crypto provides the required subtle.digest AND getRandomValues methods.
 // ──────────────────────────────────────────────────────────────────────────────
 if (typeof global.crypto === 'undefined') {
   // @ts-ignore
   global.crypto = {}
 }
 
-// ── FIX: getRandomValues is also required by Supabase PKCE internals ──────────
-// Without this, clicking Google login throws:
-// "crypto.getRandomValues is not a function (it is undefined)"
+// ── getRandomValues — required by Supabase PKCE state generation ──────────────
 // expo-crypto's getRandomBytes fills a Uint8Array with cryptographically
-// secure random bytes, exactly matching the Web Crypto API contract.
+// secure random bytes, matching the Web Crypto API contract exactly.
 // ──────────────────────────────────────────────────────────────────────────────
 if (typeof global.crypto.getRandomValues === 'undefined') {
   // @ts-ignore
@@ -32,6 +29,10 @@ if (typeof global.crypto.getRandomValues === 'undefined') {
   }
 }
 
+// ── subtle.digest — required by Supabase PKCE code-challenge generation ────────
+// Used to hash the PKCE code verifier with SHA-256 before sending it to
+// Supabase during email-link token exchange.
+// ──────────────────────────────────────────────────────────────────────────────
 if (typeof global.crypto.subtle === 'undefined') {
   // @ts-ignore
   global.crypto.subtle = {
@@ -116,4 +117,3 @@ export async function saveBirthProfile(
     .single()
   return { data, error }
 }
-
