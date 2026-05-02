@@ -1,21 +1,5 @@
+
 // src/store/readingStore.ts
-// ═══════════════════════════════════════════════════════════════════════════════
-// FIXES APPLIED:
-//
-// 1. "72 hardcoded" — dailyScore now starts as 0 (renders "--" in ScoreCircle).
-//    After chart data loads, getDailyScore() gives an astrology-based score.
-//    After AI generation completes, parsed.daily_score_base OVERRIDES it so the
-//    score shown is exactly what the AI returned for today's transits.
-//
-// 2. "No progress indicator / live feedback" — added chaptersDone counter so
-//    ReadingScreen (and HomeScreen GeneratingView) can display "X of 5 chapters
-//    written" in real time.  generationProgress and generationStatus already
-//    existed but weren't reaching 0→100 cleanly; the mapping is now fixed.
-//
-// 3. Better error resilience — individual oracle failures no longer kill the
-//    whole reading; the merged object is checked and the store reports which
-//    fields are missing so you can see it in Expo Go logs.
-// ═══════════════════════════════════════════════════════════════════════════════
 
 import { create } from 'zustand'
 import { supabase } from '../services/supabase'
@@ -26,13 +10,12 @@ import type { ChartData, ParsedReading, BirthProfile } from '../types'
 interface ReadingState {
   chartData: ChartData | null
   reading: ParsedReading | null
-  // FIX: starts as 0 so HomeScreen renders "--" instead of hardcoded "72"
   dailyScore: number
   isLoading: boolean
   isGenerating: boolean
   generationStatus: string
-  generationProgress: number  // 0-100
-  chaptersDone: number         // NEW: 0-5 chapters completed so far (live)
+  generationProgress: number
+  chaptersDone: number
   hasError: boolean
   parallelOraclesActive: number
 
@@ -43,7 +26,7 @@ interface ReadingState {
 export const useReadingStore = create<ReadingState>((set, get) => ({
   chartData: null,
   reading: null,
-  dailyScore: 0,       // FIX: was 72 — now 0 so UI can show "--" until AI returns
+  dailyScore: 0,
   isLoading: false,
   isGenerating: false,
   generationStatus: '',
@@ -53,18 +36,32 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
   parallelOraclesActive: 0,
 
   initialize: async (userId: string, birthProfile: BirthProfile) => {
-    if (get().chartData) return  // Already loaded — don't re-run
+
+    // ── LOG 1: Did initialize even get called? ─────────────────────────
+    console.log('[STORE] initialize() called')
+    console.log('[STORE] userId:', userId)
+    console.log('[STORE] birthProfile:', JSON.stringify(birthProfile))
+
+    // ── LOG 2: chartData guard ─────────────────────────────────────────
+    if (get().chartData) {
+      console.log('[STORE] chartData already exists — skipping (this is the guard)')
+      return
+    }
+
     set({ isLoading: true, hasError: false })
+    console.log('[STORE] isLoading set to true')
 
     try {
-      // ── Step 1: Calculate chart data from birth profile ────────────────
-      // getDailyScore gives an astrology-engine score immediately (no AI needed).
+      // ── Step 1: Calculate chart ────────────────────────────────────────
+      console.log('[STORE] Step 1 — calculating chart data...')
       const chartData = calculateChartData(birthProfile)
       const astrologyScore = getDailyScore(chartData)
+      console.log('[STORE] Step 1 done — astrologyScore:', astrologyScore)
       set({ chartData, dailyScore: astrologyScore })
 
-      // ── Step 2: Check Supabase for a cached reading ────────────────────
-      const { data: existingReading } = await supabase
+      // ── Step 2: Check Supabase cache ───────────────────────────────────
+      console.log('[STORE] Step 2 — checking Supabase for cached reading...')
+      const { data: existingReading, error: supabaseError } = await supabase
         .from('readings')
         .select('*')
         .eq('user_id', userId)
@@ -72,21 +69,31 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
         .limit(1)
         .single()
 
+      console.log('[STORE] Supabase error:', supabaseError?.message || 'none')
+      console.log('[STORE] existingReading found:', !!existingReading)
+      console.log('[STORE] has full_reading_text:', !!existingReading?.full_reading_text)
+
       if (existingReading?.full_reading_text) {
+        console.log('[STORE] Trying to parse cached reading...')
         const parsed = parseReadingJSON(existingReading.full_reading_text)
+        console.log('[STORE] parseReadingJSON result:', parsed ? 'VALID' : 'NULL/INVALID')
+
         if (parsed) {
+          console.log('[STORE] Using cached reading — done!')
           set({
             reading: parsed,
-            // FIX: use AI's score if available, fall back to astrology score
             dailyScore: parsed.daily_score_base ?? astrologyScore,
             isLoading: false,
             chaptersDone: 5,
           })
           return
+        } else {
+          console.log('[STORE] Cached reading is invalid — will regenerate')
         }
       }
 
-      // ── Step 3: No cached reading — fire all 5 parallel AI oracles ─────
+      // ── Step 3: Fire AI oracles ────────────────────────────────────────
+      console.log('[STORE] Step 3 — starting AI generation...')
       set({
         isLoading: false,
         isGenerating: true,
@@ -96,25 +103,26 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
         generationProgress: 5,
       })
 
+      console.log('[STORE] Calling generateFullReading now...')
       const parsed = await generateFullReading(
         chartData,
         (status: string, progress: number) => {
-          // Determine how many oracles have finished from the progress value.
-          // Progress goes: 5 → 28 → 44 → 60 → 76 → 92 (each chunk adds ~16)
+          console.log(`[STORE] Progress update: ${progress}% — ${status}`)
           const completedOracles = Math.max(0, Math.round((progress - 12) / 16))
           const oraclesRemaining = Math.max(0, 5 - completedOracles)
-
           set({
             generationStatus: status,
             generationProgress: progress,
-            chaptersDone: completedOracles,          // NEW live chapter count
+            chaptersDone: completedOracles,
             parallelOraclesActive: oraclesRemaining,
           })
         }
       )
 
+      console.log('[STORE] generateFullReading returned:', parsed ? 'VALID READING' : 'NULL')
+
       if (parsed) {
-        // Persist to Supabase so next app launch loads instantly
+        console.log('[STORE] Saving to Supabase...')
         await supabase.from('readings').upsert({
           user_id: userId,
           full_reading_text: JSON.stringify(parsed),
@@ -126,10 +134,10 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
           all_systems_data: { celtic: chartData.celtic, egyptian: chartData.egyptian },
           updated_at: new Date().toISOString(),
         })
+        console.log('[STORE] Saved to Supabase successfully!')
 
         set({
           reading: parsed,
-          // FIX: AI's daily_score_base replaces the astrology-engine estimate
           dailyScore: parsed.daily_score_base ?? astrologyScore,
           isGenerating: false,
           parallelOraclesActive: 0,
@@ -137,7 +145,9 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
           generationProgress: 100,
           generationStatus: 'Complete ✦',
         })
+        console.log('[STORE] All done! Reading is ready.')
       } else {
+        console.error('[STORE] Generation returned null — setting hasError')
         set({
           isGenerating: false,
           parallelOraclesActive: 0,
@@ -145,8 +155,9 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
           hasError: true,
         })
       }
+
     } catch (error) {
-      console.error('[ReadingStore] initialization error:', error)
+      console.error('[STORE] CRASH in initialize:', error)
       set({
         isLoading: false,
         isGenerating: false,
@@ -157,16 +168,19 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
     }
   },
 
-  reset: () => set({
-    chartData: null,
-    reading: null,
-    dailyScore: 0,
-    isLoading: false,
-    isGenerating: false,
-    hasError: false,
-    generationStatus: '',
-    generationProgress: 0,
-    chaptersDone: 0,
-    parallelOraclesActive: 0,
-  }),
+  reset: () => {
+    console.log('[STORE] reset() called')
+    set({
+      chartData: null,
+      reading: null,
+      dailyScore: 0,
+      isLoading: false,
+      isGenerating: false,
+      hasError: false,
+      generationStatus: '',
+      generationProgress: 0,
+      chaptersDone: 0,
+      parallelOraclesActive: 0,
+    })
+  },
 }))
