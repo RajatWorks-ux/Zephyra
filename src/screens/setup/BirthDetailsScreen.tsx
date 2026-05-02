@@ -36,7 +36,8 @@ const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
 
 export function BirthDetailsScreen({ navigation }: Props) {
-  const { user, refreshBirthProfile } = useAuthStore()
+  const { session, refreshBirthProfile } = useAuthStore()
+  const user = session?.user ?? null
 
   const [dayIndex, setDayIndex] = useState(0)
   const [monthIndex, setMonthIndex] = useState(0)
