@@ -9,12 +9,29 @@ import * as Crypto from 'expo-crypto'
 // to generate sha256 code challenges. Without this, it silently falls back to
 // "plain" and token exchange fails — causing Google OAuth to redirect back to
 // the sign-in screen even after a successful login.
-// This polyfill uses expo-crypto to provide the required subtle.digest method.
+// This polyfill uses expo-crypto to provide the required subtle.digest method
+// AND getRandomValues — both are needed for PKCE to work correctly.
 // ──────────────────────────────────────────────────────────────────────────────
 if (typeof global.crypto === 'undefined') {
   // @ts-ignore
   global.crypto = {}
 }
+
+// ── FIX: getRandomValues is also required by Supabase PKCE internals ──────────
+// Without this, clicking Google login throws:
+// "crypto.getRandomValues is not a function (it is undefined)"
+// expo-crypto's getRandomBytes fills a Uint8Array with cryptographically
+// secure random bytes, exactly matching the Web Crypto API contract.
+// ──────────────────────────────────────────────────────────────────────────────
+if (typeof global.crypto.getRandomValues === 'undefined') {
+  // @ts-ignore
+  global.crypto.getRandomValues = (array: Uint8Array) => {
+    const bytes = Crypto.getRandomBytes(array.length)
+    array.set(bytes)
+    return array
+  }
+}
+
 if (typeof global.crypto.subtle === 'undefined') {
   // @ts-ignore
   global.crypto.subtle = {
