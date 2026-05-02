@@ -4,6 +4,7 @@ import { Session } from '@supabase/supabase-js'
 import { supabase } from '../services/supabase'
 
 interface Profile {
+  id: string                    // ← FIXED: was missing, caused profile.id to be undefined
   display_name: string | null
   avatar_url: string | null
   auth_provider: string | null
@@ -39,7 +40,7 @@ interface AuthState {
 async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data } = await supabase
     .from('profiles')
-    .select('display_name, avatar_url, auth_provider')
+    .select('id, display_name, avatar_url, auth_provider') // ← FIXED: added 'id'
     .eq('id', userId)
     .single()
   return data
@@ -63,39 +64,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isPasswordRecovery: false,
 
   initialize: async () => {
-    // ─── FIX APPLIED: Register listener FIRST before getSession() ────────────
-    // Previously the listener was registered AFTER getSession() completed.
-    // If a Google OAuth redirect arrived during that async gap (cold start),
-    // the SIGNED_IN event would fire before the listener was attached and
-    // would be silently missed — leaving session: null and sending the user
-    // back to the sign-in screen even though auth succeeded.
-    // Registering first guarantees we never miss an auth event.
-    // ─────────────────────────────────────────────────────────────────────────
     supabase.auth.onAuthStateChange(async (event, session) => {
 
-      // ────────────────────────────────────────────────────────────────
-      // PASSWORD_RECOVERY: User clicked the reset link from email.
-      // We MUST NOT navigate to the main app here.
-      // Set the flag so RootNavigator keeps showing AuthNavigator.
-      // PasswordResetScreen handles everything from here.
-      // ────────────────────────────────────────────────────────────────
       if (event === 'PASSWORD_RECOVERY') {
         set({
           session,
           isPasswordRecovery: true,
           isLoading: false,
-          // ─── FIX: isInitialized must be true so RootNavigator stops
-          // showing the loading spinner and renders AuthNavigator instead.
           isInitialized: true,
         })
         return
       }
 
-      // ────────────────────────────────────────────────────────────────
-      // SIGNED_IN: Fires after Google OAuth, Phone OTP, email login,
-      // and exchangeCodeForSession. Fetch profile + birthProfile and
-      // let RootNavigator decide where to send the user.
-      // ────────────────────────────────────────────────────────────────
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (session) {
           const [profile, birthProfile] = await Promise.all([
@@ -108,24 +88,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             birthProfile,
             isPasswordRecovery: false,
             isLoading: false,
-            // ─── FIX: This is the critical missing piece. ──────────────
-            // When Google OAuth completes, onAuthStateChange fires SIGNED_IN
-            // BEFORE getSession() below has a chance to set isInitialized.
-            // Without isInitialized: true here, RootNavigator sees
-            // isInitialized=false and keeps showing the loading spinner,
-            // or re-renders with session=null from the getSession() path
-            // (which ran earlier and found no session yet), sending the
-            // user back to the sign-in screen even though login succeeded.
-            // ──────────────────────────────────────────────────────────
             isInitialized: true,
           })
         }
         return
       }
 
-      // ────────────────────────────────────────────────────────────────
-      // SIGNED_OUT: Clear everything. RootNavigator shows SignIn.
-      // ────────────────────────────────────────────────────────────────
       if (event === 'SIGNED_OUT') {
         set({
           session: null,
@@ -133,16 +101,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           birthProfile: null,
           isPasswordRecovery: false,
           isLoading: false,
-          // ─── FIX: Keep isInitialized true after sign out so
-          // RootNavigator immediately shows AuthNavigator, not a spinner.
           isInitialized: true,
         })
         return
       }
     })
 
-    // Check if user already had a session (e.g. app restarted).
-    // This runs AFTER the listener is registered so no events are missed.
     const { data: { session } } = await supabase.auth.getSession()
 
     if (session) {
@@ -173,7 +137,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signOut: async () => {
     set({ isLoading: true })
     await supabase.auth.signOut()
-    // SIGNED_OUT event above will clean up state
   },
 
   refreshBirthProfile: async () => {
