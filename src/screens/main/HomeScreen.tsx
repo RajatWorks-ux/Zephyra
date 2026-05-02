@@ -365,28 +365,55 @@ const icard = StyleSheet.create({
 })
 
 // ─── Generating State ─────────────────────────────────────────────────────────
-function GeneratingView({ status, progress }: { status: string; progress: number }) {
+function GeneratingView({ status, progress, oraclesActive }: { status: string; progress: number; oraclesActive: number }) {
   const rotAnim = useRef(new Animated.Value(0)).current
+  const rotAnim2 = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
     Animated.loop(
       Animated.timing(rotAnim, { toValue: 1, duration: 3000, useNativeDriver: true })
     ).start()
+    Animated.loop(
+      Animated.timing(rotAnim2, { toValue: 1, duration: 5000, useNativeDriver: true })
+    ).start()
   }, [])
 
   const rotate = rotAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] })
+  const rotateReverse = rotAnim2.interpolate({ inputRange: [0, 1], outputRange: ['360deg', '0deg'] })
+
+  const totalOracles = 5
+  const doneOracles = totalOracles - oraclesActive
 
   return (
     <View style={gen.container}>
       <View style={gen.orbWrap}>
+        <Animated.View style={[gen.ringOuter, { transform: [{ rotate: rotateReverse }] }]} />
         <Animated.View style={[gen.ring, { transform: [{ rotate }] }]} />
         <LinearGradient colors={['#C9A84C', '#7C3AED']} style={gen.orb} />
       </View>
+
+      <View style={gen.oracleRow}>
+        {Array.from({ length: totalOracles }).map((_, i) => (
+          <View
+            key={i}
+            style={[
+              gen.oracleDot,
+              i < doneOracles ? gen.oracleDotDone : gen.oracleDotActive,
+            ]}
+          />
+        ))}
+      </View>
+      <Text style={gen.oracleLabel}>
+        {oraclesActive > 0
+          ? `${oraclesActive} oracle${oraclesActive !== 1 ? 's' : ''} channeling in parallel`
+          : 'All 5 oracles complete — merging...'}
+      </Text>
+
       <Text style={gen.status}>{status}</Text>
       <View style={gen.bar}>
         <View style={[gen.fill, { width: `${progress}%` }]} />
       </View>
-      <Text style={gen.sub}>Your complete cosmic profile is being assembled.</Text>
+      <Text style={gen.sub}>5 AI oracles working simultaneously. Usually ready in 60–90 seconds.</Text>
     </View>
   )
 }
@@ -413,6 +440,18 @@ const gen = StyleSheet.create({
     fontFamily: Fonts.body, fontSize: 12,
     color: 'rgba(255,255,255,0.25)', textAlign: 'center', lineHeight: 20,
   },
+  ringOuter: {
+    position: 'absolute', width: 88, height: 88, borderRadius: 44,
+    borderWidth: 1, borderColor: 'rgba(124,58,237,0.5)', borderBottomColor: 'transparent',
+  },
+  oracleRow: { flexDirection: 'row', gap: 8, marginBottom: 8, marginTop: 4 },
+  oracleDot: { width: 8, height: 8, borderRadius: 4 },
+  oracleDotActive: { backgroundColor: '#C9A84C' },
+  oracleDotDone: { backgroundColor: 'rgba(68,255,136,0.7)' },
+  oracleLabel: {
+    fontFamily: Fonts.body, fontSize: 11,
+    color: 'rgba(255,255,255,0.35)', textAlign: 'center', marginBottom: 16,
+  },
 })
 
 // ─── MAIN HOME SCREEN ─────────────────────────────────────────────────────────
@@ -422,7 +461,7 @@ export function HomeScreen() {
   const {
     chartData, reading, dailyScore,
     isLoading, isGenerating, generationStatus, generationProgress,
-    hasError, initialize,
+    hasError, parallelOraclesActive, initialize,
   } = useReadingStore()
 
   useEffect(() => {
@@ -525,7 +564,11 @@ export function HomeScreen() {
           </View>
 
           {(isGenerating || isLoading) && (
-            <GeneratingView status={generationStatus} progress={generationProgress} />
+            <GeneratingView
+              status={generationStatus}
+              progress={generationProgress}
+              oraclesActive={parallelOraclesActive}
+            />
           )}
           {hasError && (
             <Text style={styles.errorText}>
@@ -562,8 +605,7 @@ export function HomeScreen() {
             </View>
           </>
         )}
-
-        {/* ── Explore — asymmetric grid ────────────────────────────────────── */}
+{/* ── Explore — asymmetric grid ────────────────────────────────────── */}
         <Text style={styles.sectionLabel}>Explore</Text>
 
         {/* Row 1: tall Reading card + right column */}
@@ -890,3 +932,4 @@ const styles = StyleSheet.create({
     paddingRight: 20,
   },
 })
+    
