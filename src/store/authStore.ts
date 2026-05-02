@@ -84,6 +84,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           session,
           isPasswordRecovery: true,
           isLoading: false,
+          // ─── FIX: isInitialized must be true so RootNavigator stops
+          // showing the loading spinner and renders AuthNavigator instead.
+          isInitialized: true,
         })
         return
       }
@@ -105,6 +108,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             birthProfile,
             isPasswordRecovery: false,
             isLoading: false,
+            // ─── FIX: This is the critical missing piece. ──────────────
+            // When Google OAuth completes, onAuthStateChange fires SIGNED_IN
+            // BEFORE getSession() below has a chance to set isInitialized.
+            // Without isInitialized: true here, RootNavigator sees
+            // isInitialized=false and keeps showing the loading spinner,
+            // or re-renders with session=null from the getSession() path
+            // (which ran earlier and found no session yet), sending the
+            // user back to the sign-in screen even though login succeeded.
+            // ──────────────────────────────────────────────────────────
+            isInitialized: true,
           })
         }
         return
@@ -120,6 +133,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           birthProfile: null,
           isPasswordRecovery: false,
           isLoading: false,
+          // ─── FIX: Keep isInitialized true after sign out so
+          // RootNavigator immediately shows AuthNavigator, not a spinner.
+          isInitialized: true,
         })
         return
       }
@@ -171,4 +187,4 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isPasswordRecovery: false })
   },
 }))
-            
+
