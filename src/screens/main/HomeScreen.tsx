@@ -574,11 +574,23 @@ export function HomeScreen() {
   } = useReadingStore()
 
   useEffect(() => {
-    if (profile?.id && birthProfile) {
-      initialize(profile.id, birthProfile)
-    }
-  }, [profile?.id, birthProfile])
-
+  console.log('[HOME] useEffect fired!')
+  console.log('[HOME] profile:', JSON.stringify(profile))
+  console.log('[HOME] birthProfile:', JSON.stringify(birthProfile))
+  
+  if (!profile?.id) {
+    console.log('[HOME] BLOCKED — profile.id is null/undefined')
+    return
+  }
+  if (!birthProfile) {
+    console.log('[HOME] BLOCKED — birthProfile is null/undefined')
+    return
+  }
+  
+  console.log('[HOME] Calling initialize...')
+  initialize(profile.id, birthProfile)
+}, [profile?.id, birthProfile])
+  
   function handleSignOut() {
     Alert.alert('Sign Out', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
