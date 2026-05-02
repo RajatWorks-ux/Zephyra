@@ -1,15 +1,21 @@
 import type { ChartData, ParsedReading } from '../types'
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
-const API_KEY = process.env.EXPO_PUBLIC_NVIDIA_API_KEY!
 const MODEL = 'mistralai/mistral-small-4-119b-2603'
+
+// ── Five independent API keys — each handles one parallel chunk ──────────────
+const API_KEY_1 = process.env.EXPO_PUBLIC_NVIDIA_API_KEY_1!
+const API_KEY_2 = process.env.EXPO_PUBLIC_NVIDIA_API_KEY_2!
+const API_KEY_3 = process.env.EXPO_PUBLIC_NVIDIA_API_KEY_3!
+const API_KEY_4 = process.env.EXPO_PUBLIC_NVIDIA_API_KEY_4!
+const API_KEY_5 = process.env.EXPO_PUBLIC_NVIDIA_API_KEY_5!
 
 export interface AIMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
 }
 
-// ─── Streaming AI (for chat screen — Phase 4) ─────────────────────────────────
+// ─── Streaming AI (for chat screen) ──────────────────────────────────────────
 export async function streamAIResponse(
   messages: AIMessage[],
   onChunk: (chunk: string) => void,
@@ -21,7 +27,7 @@ export async function streamAIResponse(
     const response = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${API_KEY_1}`,
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
       },
@@ -58,11 +64,48 @@ export async function streamAIResponse(
   } catch (e: any) { onError(e.message) }
 }
 
-// ─── Non-streaming (simple calls) ────────────────────────────────────────────
+// ─── Non-streaming call for a specific API key ────────────────────────────────
+async function getAIResponseWithKey(
+  apiKey: string,
+  messages: AIMessage[],
+  maxTokens: number,
+  timeoutMs: number = 240000
+): Promise<string> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        reasoning_effort: 'high',
+        messages,
+        max_tokens: maxTokens,
+        temperature: 0.10,
+        top_p: 1.0,
+        stream: false,
+      }),
+    })
+    clearTimeout(timer)
+    const data = await res.json()
+    return data.choices?.[0]?.message?.content || ''
+  } catch (error: any) {
+    clearTimeout(timer)
+    console.error(`API call failed for key ending ...${apiKey.slice(-6)}:`, error.message)
+    return ''
+  }
+}
+
+// ─── Legacy single-key response (used by chat screen) ────────────────────────
 export async function getAIResponse(messages: AIMessage[], temperature = 0.10): Promise<string> {
   const res = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${API_KEY_1}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: MODEL, reasoning_effort: 'high', messages, max_tokens: 16384, temperature, top_p: 1.0, stream: false }),
   })
   const data = await res.json()
@@ -278,32 +321,13 @@ EGYPTIAN ASTROLOGY — THE 36 DECANS:
 The ancient Egyptians divided the zodiac into 36 decans of 10 degrees each, each ruled by a decan deity. The rising of each decan on the horizon announced the next 10-day week (the Egyptian week was 10 days). Each decan god carries specific energetic qualities that color the nature of those born when the Sun transits that decan.
 
 OUTPUT REQUIREMENTS:
-You will receive specific chart data. Generate a deeply personal reading based on the SPECIFIC data given. Never generate generic content. Every statement must be grounded in the actual chart positions provided.
+You will receive specific chart data. Generate deeply personal content based on the SPECIFIC data given. Never generate generic content. Every statement must be grounded in the actual chart positions provided. Each chapter must be a minimum of 5+ substantial paragraphs of genuinely useful, honest, specific content. The past statements must feel uncannily accurate — not vague platitudes but specific life experiences that someone born with this exact configuration would have experienced.
 
-Each chapter must be a minimum of 4-6 substantial paragraphs of genuinely useful, honest, specific content. The past statements must feel uncannily accurate — not vague platitudes but specific life experiences that someone born with this exact configuration would have experienced.
-
-Return ONLY a valid JSON object. No markdown fences, no explanation, no text before or after the JSON object. Start your response with { and end with }.
-
-The JSON must have exactly these keys:
-past_statements: array of 7 strings — specific past experiences this person likely had, mentioning approximate ages or life periods
-present_statements: array of 4 strings — honest assessment of their current life chapter
-chapter_identity: string — 5+ paragraphs on who they are at soul level, synthesizing Western, Vedic, Chinese, and other traditions
-chapter_love: string — 5+ paragraphs on their love nature, patterns, needs, and what they attract
-chapter_career: string — 5+ paragraphs on their natural talents, career path, money relationship
-chapter_health: string — 4+ paragraphs on their physical constitution, vulnerable areas, energy patterns
-chapter_family: string — 4+ paragraphs on family karma, childhood blueprint, roots
-chapter_purpose: string — 5+ paragraphs on their life purpose synthesizing North Node, dharma, Mayan mission
-chapter_now: string — 4+ paragraphs on their current life chapter, what Mahadasha means, what to do now
-compatible_signs: array of 3 objects each with sign (string) and percentage (number 70-98)
-career_strengths: array of 3 strings — specific natural talents
-best_months_love: array of 3 integers (1-12) — month numbers best for love
-best_months_money: array of 3 integers (1-12) — month numbers best for money
-daily_score_base: integer 45-85
-daily_energy_summary: string — one sentence about today's cosmic energy`
+Return ONLY a valid JSON object. No markdown fences, no explanation, no text before or after the JSON object. Start your response with { and end with }.`
 }
 
-// ─── Build user prompt from chart data ───────────────────────────────────────
-function buildUserPrompt(chartData: ChartData): string {
+// ─── Build chart context (shared across all 5 chunk prompts) ──────────────────
+function buildChartContext(chartData: ChartData): string {
   const bp = chartData.birthProfile
   const w = chartData.western
   const v = chartData.vedic
@@ -312,9 +336,7 @@ function buildUserPrompt(chartData: ChartData): string {
   const cel = chartData.celtic
   const e = chartData.egyptian
 
-  return `Generate a complete astrological reading for this person.
-
-BIRTH INFORMATION:
+  return `BIRTH INFORMATION:
 Date: ${bp.birth_date}
 Time: ${bp.birth_time_known ? bp.birth_time : 'Unknown (using sunrise default)'}
 Place: ${bp.birth_city}, ${bp.birth_country}
@@ -355,22 +377,108 @@ EGYPTIAN DECAN:
 Sun Decan: ${e.decanName}
 Presiding Deity: ${e.decanGod}
 
-Today's date for current timing: ${new Date().toISOString().split('T')[0]}
+Today's date for current timing: ${new Date().toISOString().split('T')[0]}`
+}
+// ─── Chunk 1: past_statements + present_statements + chapter_identity ─────────
+function buildChunk1Prompt(chartContext: string): string {
+  return `${chartContext}
 
-Now generate the complete JSON reading for this person. Remember: specific, personal, honest, minimum 5 paragraphs per chapter.`
+Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content.
+
+Return ONLY this JSON structure (start with { end with }):
+{
+  "past_statements": [array of exactly 7 strings — specific past life experiences this person very likely had, each referencing approximate ages or life periods like "In your early teens..." or "Around age 24-27..." — these must feel uncannily accurate and specific to their Western Sun/Moon, Vedic Nakshatra, Chinese pillars, and Mayan sign combined],
+  "present_statements": [array of exactly 4 strings — honest, direct assessment of their current life chapter based on their active Mahadasha/Antardasha and current transits],
+  "chapter_identity": "string — minimum 5 substantial paragraphs on who this person is at soul level, synthesizing their Western Sun/Moon/Rising, Vedic Rashi and Nakshatra, Chinese Four Pillars element balance, Mayan galactic signature, Celtic tree, and Egyptian decan into one unified portrait of their soul's deepest nature, gifts, shadows, and trajectory"
+}`
 }
 
-// ─── Parse AI response safely ─────────────────────────────────────────────────
+// ─── Chunk 2: chapter_love + chapter_career ───────────────────────────────────
+function buildChunk2Prompt(chartContext: string): string {
+  return `${chartContext}
+
+Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content.
+
+Return ONLY this JSON structure (start with { end with }):
+{
+  "chapter_love": "string — minimum 5 substantial paragraphs on this person's love nature, relationship patterns, what they need from a partner, what they naturally attract, their attachment style as shown by Moon sign and Venus placement inferred from Sun sign, their past relationship karma, their blocks to intimacy, and what their ideal relationship actually looks like versus what they tend to settle for",
+  "chapter_career": "string — minimum 5 substantial paragraphs on this person's natural career gifts, the domains where they will outperform all competition, their relationship with money and wealth-building, the career mistakes they are prone to making, their best working environment, how their Chinese element affects their professional style, and the specific paths most aligned with their Midheaven energy and Mahadasha timing"
+}`
+}
+
+// ─── Chunk 3: chapter_health + chapter_family ────────────────────────────────
+function buildChunk3Prompt(chartContext: string): string {
+  return `${chartContext}
+
+Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content.
+
+Return ONLY this JSON structure (start with { end with }):
+{
+  "chapter_health": "string — minimum 5 substantial paragraphs on this person's physical constitution as shown by their Ascendant sign, the body areas ruled by their dominant signs, their energetic patterns (when they are high energy vs depleted), the health vulnerabilities they carry based on their chart signature, how their Chinese element affects their physical constitution, specific practices that will strengthen their weak areas, and the emotional-physical connection most relevant to their chart",
+  "chapter_family": "string — minimum 5 substantial paragraphs on this person's family karma and childhood blueprint — the specific family dynamics their chart indicates they were born into, the mother wound or gift shown by their Moon, the father archetype shown by their Sun and Saturn, the sibling and extended family patterns, the ancestral karma indicated by their Ketu placement and Chinese year pillar, how their childhood experiences shaped their adult patterns, and what healing work is most important for their family relationships"
+}`
+}
+
+// ─── Chunk 4: chapter_purpose + chapter_now ──────────────────────────────────
+function buildChunk4Prompt(chartContext: string): string {
+  return `${chartContext}
+
+Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content.
+
+Return ONLY this JSON structure (start with { end with }):
+{
+  "chapter_purpose": "string — minimum 5 substantial paragraphs on this person's life purpose, synthesizing their North Node direction (inferred from chart signature), their Vedic dharmic path as shown by their Nakshatra deity and Mahadasha sequence, their Mayan galactic mission as shown by their day sign and tone, their Celtic tree's deep medicine for them specifically, and the specific contribution their soul came to make — what they are here to build, heal, teach, or create that no one else can do in quite the same way",
+  "chapter_now": "string — minimum 5 substantial paragraphs on this person's current life chapter — what their active Mahadasha and Antardasha mean concretely for their life right now, what themes are activating, what opportunities are opening, what they must release, what actions will create the best outcomes in the next 1-3 years specifically, and the single most important inner work their chart is calling them toward at this exact moment in their journey"
+}`
+}
+
+// ─── Chunk 5: scores + compatible_signs + career_strengths + best months ──────
+function buildChunk5Prompt(chartContext: string): string {
+  return `${chartContext}
+
+Generate ONLY the following JSON fields for this person. Be specific and accurate.
+
+Return ONLY this JSON structure (start with { end with }):
+{
+  "compatible_signs": [exactly 3 objects, each: {"sign": "Western zodiac sign name", "percentage": number between 70 and 98} — based on their actual Sun/Moon/Rising combination and Chinese animal compatibility],
+  "career_strengths": [exactly 3 strings — specific natural talents this person has that are genuine competitive advantages in their professional life, grounded in their chart],
+  "best_months_love": [exactly 3 integers between 1-12 — the calendar months most favorable for love and relationships for this person based on their Venus energy and Mahadasha timing],
+  "best_months_money": [exactly 3 integers between 1-12 — the calendar months most favorable for financial moves and abundance for this person based on their Jupiter energy and Mahadasha timing],
+  "daily_score_base": integer between 45 and 85 — their baseline cosmic energy score for today based on current transits and Mahadasha,
+  "daily_energy_summary": "one sentence of 15-25 words describing today's cosmic energy specifically for this person based on their chart and current timing"
+}`
+}
+
+// ─── Parse partial JSON safely ────────────────────────────────────────────────
+function parsePartialJSON(text: string): Partial<ParsedReading> {
+  const clean = text.trim()
+  try {
+    return JSON.parse(clean)
+  } catch {
+    // Try fenced
+    const fenced = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+    if (fenced) {
+      try { return JSON.parse(fenced[1]) } catch {}
+    }
+    // Try outermost braces
+    const start = clean.indexOf('{')
+    const end = clean.lastIndexOf('}')
+    if (start !== -1 && end !== -1 && end > start) {
+      try { return JSON.parse(clean.substring(start, end + 1)) } catch {}
+    }
+    return {}
+  }
+}
+
+// ─── Parse AI response safely (full reading — used by readingStore) ───────────
 export function parseReadingJSON(text: string): ParsedReading | null {
   try {
     return JSON.parse(text.trim())
   } catch {
-    // Try to extract JSON from markdown fences
     const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
     if (fenced) {
       try { return JSON.parse(fenced[1]) } catch {}
     }
-    // Try to find outermost JSON object
     const start = text.indexOf('{')
     const end = text.lastIndexOf('}')
     if (start !== -1 && end !== -1 && end > start) {
@@ -380,46 +488,143 @@ export function parseReadingJSON(text: string): ParsedReading | null {
   }
 }
 
-// ─── MAIN: Generate full reading ─────────────────────────────────────────────
+// ─── Validate merged reading has all required fields ─────────────────────────
+function isCompleteReading(obj: Partial<ParsedReading>): obj is ParsedReading {
+  return !!(
+    obj.past_statements?.length &&
+    obj.present_statements?.length &&
+    obj.chapter_identity &&
+    obj.chapter_love &&
+    obj.chapter_career &&
+    obj.chapter_health &&
+    obj.chapter_family &&
+    obj.chapter_purpose &&
+    obj.chapter_now &&
+    obj.compatible_signs?.length &&
+    obj.career_strengths?.length &&
+    obj.best_months_love?.length &&
+    obj.best_months_money?.length &&
+    typeof obj.daily_score_base === 'number' &&
+    obj.daily_energy_summary
+  )
+}
+
+// ─── MAIN: Generate full reading via 5 parallel oracle calls ──────────────────
 export async function generateFullReading(
   chartData: ChartData,
   onStatusUpdate: (status: string, progress: number) => void,
 ): Promise<ParsedReading | null> {
-  const statuses = [
-    ['Consulting the Western birth chart...', 10],
-    ['Reading your Vedic Nakshatra...', 20],
-    ['Decoding Chinese Four Pillars...', 30],
-    ['Consulting the Mayan Tzolkin...', 40],
-    ['Exploring Celtic tree wisdom...', 50],
-    ['Reading Egyptian decans...', 60],
-    ['Cross-referencing all traditions...', 75],
-    ['Synthesizing your complete truth...', 90],
-  ] as const
 
-  let statusIdx = 0
-  const statusInterval = setInterval(() => {
-    if (statusIdx < statuses.length) {
-      onStatusUpdate(statuses[statusIdx][0], statuses[statusIdx][1])
-      statusIdx++
-    }
-  }, 3000)
+  const systemPrompt = buildSystemPrompt()
+  const chartContext = buildChartContext(chartData)
 
-  try {
-    const fullText = await getAIResponse(
-      [
-        { role: 'system', content: buildSystemPrompt() },
-        { role: 'user', content: buildUserPrompt(chartData) },
-      ],
-      0.10
-    )
+  // Track how many of the 5 parallel chunks have completed
+  let completedCount = 0
+  const chunkLabels = [
+    'Past lives & identity decoded ✦',
+    'Love & career chapters written ✦',
+    'Health & family karma revealed ✦',
+    'Purpose & present chapter complete ✦',
+    'Cosmic signatures calibrated ✦',
+  ]
 
-    clearInterval(statusInterval)
-    onStatusUpdate('Finalizing your reading...', 98)
-
-    return parseReadingJSON(fullText)
-  } catch (error) {
-    clearInterval(statusInterval)
-    console.error('Reading generation error:', error)
-    return null
+  function onChunkDone(idx: number) {
+    completedCount++
+    const progress = 12 + completedCount * 16  // 28 → 44 → 60 → 76 → 92
+    onStatusUpdate(chunkLabels[idx], progress)
   }
-}
+
+  onStatusUpdate('Dispatching 5 cosmic oracles simultaneously...', 8)
+
+  // Fire all 5 API keys in parallel — each generates only its slice of the reading
+  const [raw1, raw2, raw3, raw4, raw5] = await Promise.all([
+
+    // Oracle 1 (API Key 1): past_statements + present_statements + chapter_identity
+    getAIResponseWithKey(
+      API_KEY_1,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: buildChunk1Prompt(chartContext) },
+      ],
+      4096,
+      240000
+    ).then(r => { onChunkDone(0); return r }),
+
+    // Oracle 2 (API Key 2): chapter_love + chapter_career
+    getAIResponseWithKey(
+      API_KEY_2,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: buildChunk2Prompt(chartContext) },
+      ],
+      4096,
+      240000
+    ).then(r => { onChunkDone(1); return r }),
+
+    // Oracle 3 (API Key 3): chapter_health + chapter_family
+    getAIResponseWithKey(
+      API_KEY_3,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: buildChunk3Prompt(chartContext) },
+      ],
+      4096,
+      240000
+    ).then(r => { onChunkDone(2); return r }),
+
+    // Oracle 4 (API Key 4): chapter_purpose + chapter_now
+    getAIResponseWithKey(
+      API_KEY_4,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: buildChunk4Prompt(chartContext) },
+      ],
+      4096,
+      240000
+    ).then(r => { onChunkDone(3); return r }),
+
+    // Oracle 5 (API Key 5): compatible_signs + career_strengths + months + scores
+    getAIResponseWithKey(
+      API_KEY_5,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: buildChunk5Prompt(chartContext) },
+      ],
+      800,
+      240000
+    ).then(r => { onChunkDone(4); return r }),
+  ])
+
+  onStatusUpdate('Weaving all 5 traditions into your complete truth...', 96)
+
+  // Parse each chunk and merge into one complete ParsedReading
+  const merged: Partial<ParsedReading> = {
+    ...parsePartialJSON(raw1),
+    ...parsePartialJSON(raw2),
+    ...parsePartialJSON(raw3),
+    ...parsePartialJSON(raw4),
+    ...parsePartialJSON(raw5),
+  }
+
+  if (isCompleteReading(merged)) {
+    return merged
+  }
+
+  // Log which fields are missing so you can debug
+  const required: (keyof ParsedReading)[] = [
+    'past_statements', 'present_statements', 'chapter_identity',
+    'chapter_love', 'chapter_career', 'chapter_health', 'chapter_family',
+    'chapter_purpose', 'chapter_now', 'compatible_signs', 'career_strengths',
+    'best_months_love', 'best_months_money', 'daily_score_base', 'daily_energy_summary',
+  ]
+  const missing = required.filter(k => !merged[k])
+  console.error('Reading incomplete — missing fields:', missing)
+  console.error('Raw chunk 1:', raw1.substring(0, 200))
+  console.error('Raw chunk 2:', raw2.substring(0, 200))
+  console.error('Raw chunk 3:', raw3.substring(0, 200))
+  console.error('Raw chunk 4:', raw4.substring(0, 200))
+  console.error('Raw chunk 5:', raw5.substring(0, 200))
+
+  return null
+  }
+      
