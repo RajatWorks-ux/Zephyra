@@ -1,4 +1,4 @@
-/ src/screens/main/ReadingScreen.tsx
+// src/screens/main/ReadingScreen.tsx
 // ═══════════════════════════════════════════════════════════════════════════════
 // FIXES APPLIED:
 //
