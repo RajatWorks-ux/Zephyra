@@ -33,7 +33,6 @@ export async function streamAIResponse(
       },
       body: JSON.stringify({
         model: MODEL,
-        reasoning_effort: 'high',
         messages,
         max_tokens: 16384,
         temperature,
@@ -83,7 +82,6 @@ async function getAIResponseWithKey(
       },
       body: JSON.stringify({
         model: MODEL,
-        reasoning_effort: 'high',
         messages,
         max_tokens: maxTokens,
         temperature: 0.10,
@@ -106,7 +104,6 @@ export async function getAIResponse(messages: AIMessage[], temperature = 0.10): 
   const res = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${API_KEY_1}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, reasoning_effort: 'high', messages, max_tokens: 16384, temperature, top_p: 1.0, stream: false }),
   })
   const data = await res.json()
   return data.choices?.[0]?.message?.content || ''
@@ -627,4 +624,5 @@ export async function generateFullReading(
 
   return null
   }
-      
+
+
