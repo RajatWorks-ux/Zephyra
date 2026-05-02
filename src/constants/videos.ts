@@ -1,10 +1,4 @@
-
 // src/constants/videos.ts
-// ⚠️  These are signed URLs from a private Supabase bucket.
-// They expire — see each token's `exp` field.
-// To get permanent URLs: make the bucket PUBLIC in Supabase → Storage → videos → Bucket settings
-// and replace with: https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/public/videos/<filename>
-
 export const Videos = {
   splashBg: {
     uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/splash-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3Mvc3BsYXNoLWJnLm1wNCIsImlhdCI6MTc3NzI4MDc4MiwiZXhwIjozMzU0MDgwNzgyfQ.tk2LHyB4x0u1exwVT_9LdAU6ny6GX5GsvPOQ57Ot9KU',
@@ -34,9 +28,24 @@ export const Videos = {
     uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/birth-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvYmlydGgtYmcubXA0IiwiaWF0IjoxNzc3MjgxMDk4LCJleHAiOjE4MDg4MTcwOTh9.tny2Oj8TNfv4lJrexaTiK8dpoozXM1Oow-PSsPg22Io',
   },
   forgotBg: {
-    uri:'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/forgot-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvZm9yZ290LWJnLm1wNCIsImlhdCI6MTc3NzM4NTY3MCwiZXhwIjoxODA4OTIxNjcwfQ.6HDIo5-X0SWVQAKqI7vbfxovFsryK696rMlNJu8r9Jk',      
+    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/forgot-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvZm9yZ290LWJnLm1wNCIsImlhdCI6MTc3NzM4NTY3MCwiZXhwIjoxODA4OTIxNjcwfQ.6HDIo5-X0SWVQAKqI7vbfxovFsryK696rMlNJu8r9Jk',
   },
   accountCreatedBg: {
-    uri:'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/account-created-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvYWNjb3VudC1jcmVhdGVkLWJnLm1wNCIsImlhdCI6MTc3NzQ1MDYzOSwiZXhwIjoxODA4OTg2NjM5fQ.b-66DW4qPj6lTRdQlx2DpYI_1-fV9DL1islDyoBP3aM',
+    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/account-created-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvYWNjb3VudC1jcmVhdGVkLWJnLm1wNCIsImlhdCI6MTc3NzQ1MDYzOSwiZXhwIjoxODA4OTg2NjM5fQ.b-66DW4qPj6lTRdQlx2DpYI_1-fV9DL1islDyoBP3aM',
+  },
+
+  // ── NEW Phase 2 videos ────────────────────────────────────────────────────
+  // After uploading home-bg.mp4, reading-bg.mp4, forecast-bg.mp4 to Supabase Storage:
+  // 1. Go to Supabase → Storage → videos → click the file → Copy URL
+  // 2. Replace each uri below with the signed URL you copied
+  // Until you upload: these fall back to the loading video (same dark cosmic look)
+  homeBg: {
+    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/loading-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvbG9hZGluZy1iZy5tcDQiLCJpYXQiOjE3NzcyODEwMjEsImV4cCI6MTgwODgxNzAyMX0.emjFxXw16PebUpgj2aVegITeHZYzdPQB-C6l-DAkDpo',
+  },
+  readingBg: {
+    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/loading-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvbG9hZGluZy1iZy5tcDQiLCJpYXQiOjE3NzcyODEwMjEsImV4cCI6MTgwODgxNzAyMX0.emjFxXw16PebUpgj2aVegITeHZYzdPQB-C6l-DAkDpo',
+  },
+  forecastBg: {
+    uri: 'https://hjxtqjmpphctiurfknio.supabase.co/storage/v1/object/sign/videos/loading-bg.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9lNmRhNTk0Ny1kNzgzLTRlMDEtOTczYi1hMzY1MDNjMzUwMjgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlb3MvbG9hZGluZy1iZy5tcDQiLCJpYXQiOjE3NzcyODEwMjEsImV4cCI6MTgwODgxNzAyMX0.emjFxXw16PebUpgj2aVegITeHZYzdPQB-C6l-DAkDpo',
   },
 }
