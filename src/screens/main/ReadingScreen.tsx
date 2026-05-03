@@ -39,6 +39,22 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true)
 }
 
+
+// ─── Compute age from birth_date string ────────────────────────────────────────
+function computeAge(birthDateStr: string | null | undefined): number {
+  if (!birthDateStr) return 25
+  try {
+    const birth = new Date(birthDateStr)
+    const now = new Date()
+    let age = now.getFullYear() - birth.getFullYear()
+    const m = now.getMonth() - birth.getMonth()
+    if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--
+    return Math.max(0, age)
+  } catch {
+    return 25
+  }
+}
+
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
 
 const CHAPTERS = [
@@ -49,7 +65,6 @@ const CHAPTERS = [
     accent: '#C9A84C',
     isPastReveal: true,
     oracleIndex: 0,
-    dotPattern: 'spiral',
     summaryKey: null as string | null,
     decorativeSymbol: '✦',
   },
@@ -59,7 +74,6 @@ const CHAPTERS = [
     subtitle: 'Your soul at its deepest level',
     accent: '#7B2FBE',
     oracleIndex: 0,
-    dotPattern: 'corners',
     summaryKey: 'chapter_identity_summary',
     decorativeSymbol: '◈',
   },
@@ -69,7 +83,6 @@ const CHAPTERS = [
     subtitle: 'Your heart, your patterns, your people',
     accent: '#BE2F6E',
     oracleIndex: 1,
-    dotPattern: 'merge',
     summaryKey: 'chapter_love_summary',
     decorativeSymbol: '♡',
   },
@@ -79,7 +92,6 @@ const CHAPTERS = [
     subtitle: 'Your gifts and your path to prosperity',
     accent: '#BEA02F',
     oracleIndex: 1,
-    dotPattern: 'grid',
     summaryKey: 'chapter_career_summary',
     decorativeSymbol: '◇',
   },
@@ -89,7 +101,6 @@ const CHAPTERS = [
     subtitle: 'Your body, your energy, your rhythms',
     accent: '#2FBE6E',
     oracleIndex: 2,
-    dotPattern: 'ripple',
     summaryKey: 'chapter_health_summary',
     decorativeSymbol: '⟡',
   },
@@ -99,7 +110,6 @@ const CHAPTERS = [
     subtitle: 'Where you came from, what you carry',
     accent: '#8E8EBE',
     oracleIndex: 2,
-    dotPattern: 'rain',
     summaryKey: 'chapter_family_summary',
     decorativeSymbol: '⊹',
   },
@@ -109,7 +119,6 @@ const CHAPTERS = [
     subtitle: 'Why you are here. What you are building.',
     accent: '#FFD700',
     oracleIndex: 3,
-    dotPattern: 'supernova',
     summaryKey: 'chapter_purpose_summary',
     decorativeSymbol: '✺',
   },
@@ -119,179 +128,10 @@ const CHAPTERS = [
     subtitle: 'Your current chapter and what it demands',
     accent: '#2FBEBE',
     oracleIndex: 3,
-    dotPattern: 'clocksweep',
     summaryKey: 'chapter_now_summary',
     decorativeSymbol: '◎',
   },
 ] as const
-
-// ─── Compute dot start positions for each animation pattern ───────────────────
-function computeDotStarts(pattern: string, N: number): Array<{ x: number; y: number }> {
-  return Array.from({ length: N }, (_, i) => {
-    const t = i / N
-    const R = 280
-    switch (pattern) {
-      case 'spiral': {
-        const angle = t * Math.PI * 6
-        const r = R * (0.7 + t * 0.3)
-        return { x: Math.cos(angle) * r, y: Math.sin(angle) * (r * 0.55) }
-      }
-      case 'corners': {
-        const corner = i % 4
-        const spread = (Math.random() - 0.5) * 80
-        const signs: [number, number][] = [[1, 1], [-1, 1], [1, -1], [-1, -1]]
-        return {
-          x: signs[corner][0] * (R * 0.55 + spread),
-          y: signs[corner][1] * (R * 0.35 + spread),
-        }
-      }
-      case 'merge': {
-        const side = i < N / 2 ? -1 : 1
-        return {
-          x: side * (R * 0.6 + Math.random() * 40),
-          y: (Math.random() - 0.5) * 160,
-        }
-      }
-      case 'grid': {
-        const cols = Math.ceil(Math.sqrt(N))
-        const col = i % cols
-        const row = Math.floor(i / cols)
-        return {
-          x: (col - cols / 2 + 0.5) * 65,
-          y: (row - cols / 2 + 0.5) * 55,
-        }
-      }
-      case 'ripple': {
-        const rings = 5
-        const ring = Math.floor(t * rings)
-        const inRing = (i % Math.ceil(N / rings)) / Math.ceil(N / rings)
-        const angle = inRing * Math.PI * 2
-        const r = (ring + 1) * (R / rings)
-        return { x: Math.cos(angle) * r, y: Math.sin(angle) * (r * 0.5) }
-      }
-      case 'rain': {
-        return {
-          x: (Math.random() - 0.5) * R * 1.5,
-          y: -(R * 0.5 + Math.random() * R * 0.4),
-        }
-      }
-      case 'supernova': {
-        const angle = t * Math.PI * 2
-        return { x: Math.cos(angle) * R, y: Math.sin(angle) * (R * 0.5) }
-      }
-      case 'clocksweep': {
-        const angle = t * Math.PI * 2 - Math.PI / 2
-        return { x: Math.cos(angle) * R, y: Math.sin(angle) * (R * 0.55) }
-      }
-      default: {
-        const angle = t * Math.PI * 2
-        return { x: Math.cos(angle) * R, y: Math.sin(angle) * (R * 0.5) }
-      }
-    }
-  })
-}
-
-// ─── Dot Assembly Animation Component ─────────────────────────────────────────
-// Dots fly in from outside when chapter opens, then fade out as text appears.
-const DOT_COUNT = 40
-
-interface DotExplosionProps {
-  isActive: boolean
-  accentColor: string
-  pattern: string
-}
-
-function DotExplosion({ isActive, accentColor, pattern }: DotExplosionProps) {
-  const anims = useRef(
-    Array.from({ length: DOT_COUNT }, () => ({
-      tx: new Animated.Value(0),
-      ty: new Animated.Value(0),
-      opacity: new Animated.Value(0),
-      scale: new Animated.Value(0.5),
-    }))
-  ).current
-
-  // Pre-compute start positions once (stable across renders)
-  const starts = useMemo(() => computeDotStarts(pattern, DOT_COUNT), [pattern])
-
-  useEffect(() => {
-    if (isActive) {
-      // Initialize all dots at their start positions (off-screen from card center)
-      anims.forEach((a, i) => {
-        a.tx.setValue(starts[i].x)
-        a.ty.setValue(starts[i].y)
-        a.opacity.setValue(0.85)
-        a.scale.setValue(0.8 + Math.random() * 0.6)
-      })
-
-      // Phase 1 + 2: All dots fly to random clustered positions near center
-      const flyAnims = anims.map((a, i) =>
-        Animated.parallel([
-          Animated.timing(a.tx, {
-            toValue: (Math.random() - 0.5) * 70,
-            duration: 550 + Math.random() * 200,
-            useNativeDriver: true,
-          }),
-          Animated.timing(a.ty, {
-            toValue: (Math.random() - 0.5) * 50,
-            duration: 550 + Math.random() * 200,
-            useNativeDriver: true,
-          }),
-        ])
-      )
-
-      // Phase 3: Fade out after clustering
-      const fadeAnims = anims.map((a) =>
-        Animated.timing(a.opacity, {
-          toValue: 0,
-          duration: 350,
-          useNativeDriver: true,
-        })
-      )
-
-      Animated.parallel([
-        Animated.parallel(flyAnims),
-        Animated.sequence([
-          Animated.delay(480),
-          Animated.stagger(8, fadeAnims),
-        ]),
-      ]).start()
-    } else {
-      // Instantly hide all dots when chapter collapses
-      anims.forEach((a) => {
-        a.opacity.setValue(0)
-      })
-    }
-  }, [isActive])
-
-  return (
-    <View
-      style={StyleSheet.absoluteFillObject}
-      pointerEvents="none"
-    >
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        {anims.map((a, i) => (
-          <Animated.View
-            key={i}
-            style={{
-              position: 'absolute',
-              width: 3,
-              height: 3,
-              borderRadius: 1.5,
-              backgroundColor: accentColor,
-              opacity: a.opacity,
-              transform: [
-                { translateX: a.tx },
-                { translateY: a.ty },
-                { scale: a.scale },
-              ],
-            }}
-          />
-        ))}
-      </View>
-    </View>
-  )
-}
 
 // ─── Text Fade-In Component (staggered paragraphs) ────────────────────────────
 interface FadeInTextProps {
@@ -301,7 +141,6 @@ interface FadeInTextProps {
 }
 
 function FadeInText({ text, accentColor, delay = 700 }: FadeInTextProps) {
-  // Split text into paragraphs by double newline
   const paragraphs = useMemo(() => {
     return text
       .split(/\n\n+/)
@@ -309,28 +148,23 @@ function FadeInText({ text, accentColor, delay = 700 }: FadeInTextProps) {
       .filter((p) => p.length > 0)
   }, [text])
 
-  const fadeAnims = useRef(
-    paragraphs.map(() => new Animated.Value(0))
-  ).current
-
-  const slideAnims = useRef(
-    paragraphs.map(() => new Animated.Value(12))
-  ).current
+  const fadeAnims = useRef(paragraphs.map(() => new Animated.Value(0))).current
+  const slideAnims = useRef(paragraphs.map(() => new Animated.Value(14))).current
 
   useEffect(() => {
     const animations = paragraphs.map((_, i) =>
       Animated.parallel([
         Animated.timing(fadeAnims[i], {
           toValue: 1,
-          duration: 400,
+          duration: 420,
           useNativeDriver: true,
-          delay: delay + i * 120,
+          delay: delay + i * 130,
         }),
         Animated.timing(slideAnims[i], {
           toValue: 0,
-          duration: 400,
+          duration: 420,
           useNativeDriver: true,
-          delay: delay + i * 120,
+          delay: delay + i * 130,
         }),
       ])
     )
@@ -340,48 +174,56 @@ function FadeInText({ text, accentColor, delay = 700 }: FadeInTextProps) {
   return (
     <View>
       {paragraphs.map((para, i) => (
-        <React.Fragment key={i}>
-          <Animated.Text
-            style={[
-              textStyles.paragraph,
-              {
-                opacity: fadeAnims[i] ?? 1,
-                transform: [{ translateY: slideAnims[i] ?? 0 }],
-              },
-            ]}
-          >
-            {para}
-          </Animated.Text>
-          {i < paragraphs.length - 1 && (
-            <View style={textStyles.midDivider}>
-              <Text style={[textStyles.midDividerDot, { color: accentColor + '60' }]}>
-                · · ·
-              </Text>
-            </View>
-          )}
-        </React.Fragment>
+        <Animated.View
+          key={i}
+          style={[
+            paraBox.card,
+            { borderColor: accentColor + '22' },
+            {
+              opacity: fadeAnims[i] ?? 1,
+              transform: [{ translateY: slideAnims[i] ?? 0 }],
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={[accentColor + '0A', 'transparent']}
+            style={StyleSheet.absoluteFillObject}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          />
+          <View style={[paraBox.leftAccent, { backgroundColor: accentColor + '55' }]} />
+          <Text style={paraBox.text}>{para}</Text>
+        </Animated.View>
       ))}
     </View>
   )
 }
 
-const textStyles = StyleSheet.create({
-  paragraph: {
+const paraBox = StyleSheet.create({
+  card: {
+    borderRadius: 14,
+    borderWidth: 1,
+    backgroundColor: 'rgba(13,13,43,0.55)',
+    marginBottom: 12,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    position: 'relative',
+  },
+  leftAccent: {
+    width: 3,
+    borderRadius: 2,
+    marginRight: 14,
+    flexShrink: 0,
+  },
+  text: {
     fontFamily: Fonts.body,
     fontSize: 15,
-    color: 'rgba(255,255,255,0.80)',
+    color: 'rgba(255,255,255,0.82)',
     lineHeight: 30,
-    marginBottom: 4,
     letterSpacing: 0.1,
-  },
-  midDivider: {
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  midDividerDot: {
-    fontFamily: Fonts.body,
-    fontSize: 18,
-    letterSpacing: 6,
+    flex: 1,
+    paddingVertical: 14,
+    paddingRight: 14,
   },
 })
 
@@ -478,7 +320,7 @@ function parsePastStatements(statements: string[]): PastStatement[] {
   })
 }
 
-function PastRevealCards({ statements }: { statements: string[] }) {
+function PastRevealCards({ statements, age }: { statements: string[]; age: number }) {
   const [resonates, setResonates] = useState<Record<number, boolean | null>>({})
   const [savedFutures, setSavedFutures] = useState<Record<number, boolean>>({})
 
@@ -488,9 +330,24 @@ function PastRevealCards({ statements }: { statements: string[] }) {
   const pastCount = Object.values(resonates).filter((v) => v === true).length
   const allPastAnswered = Object.keys(resonates).length === pastItems.length && pastItems.length > 0
 
+  const isVeryYoung = age <= 3
+  const hasMeaningfulPast = pastItems.length > 0
+
   return (
     <View>
-      {/* PAST section */}
+      {/* PAST section - age-aware */}
+      {isVeryYoung && !hasMeaningfulPast ? (
+        <View style={past.noPastCard}>
+          <Text style={past.noPastIcon}>✦</Text>
+          <Text style={past.noPastTitle}>Your Story Is Just Beginning</Text>
+          <Text style={past.noPastText}>
+            You are so young that almost everything in your life still lies ahead. The stars have very
+            little past to look back on — and that is a beautiful thing. Your whole story is still
+            being written.
+          </Text>
+        </View>
+      ) : hasMeaningfulPast ? (
+        <>
       {pastItems.map((stmt, i) => {
         const status = resonates[i]
         return (
@@ -540,6 +397,17 @@ function PastRevealCards({ statements }: { statements: string[] }) {
           </Text>
         </View>
       )}
+        </>
+      ) : (
+        <View style={past.noPastCard}>
+          <Text style={past.noPastIcon}>✦</Text>
+          <Text style={past.noPastTitle}>Nothing Special to Reveal Yet</Text>
+          <Text style={past.noPastText}>
+            The stars don't see anything unusual in your past that needs attention. Your most
+            important chapters are still ahead of you.
+          </Text>
+        </View>
+      )}
 
       {/* Divider between PAST and FUTURE */}
       {futureItems.length > 0 && (
@@ -584,6 +452,37 @@ function PastRevealCards({ statements }: { statements: string[] }) {
 }
 
 const past = StyleSheet.create({
+  // No-past graceful card
+  noPastCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.25)',
+    backgroundColor: 'rgba(201,168,76,0.06)',
+    padding: 22,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  noPastIcon: {
+    fontSize: 22,
+    color: '#C9A84C',
+    marginBottom: 10,
+  },
+  noPastTitle: {
+    fontFamily: Fonts.heading,
+    fontSize: 16,
+    color: '#C9A84C',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  noPastText: {
+    fontFamily: Fonts.mystical,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+    lineHeight: 24,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  // Past cards
   card: {
     borderRadius: 14,
     borderWidth: 1,
@@ -774,8 +673,8 @@ function TtsButton({
       const ttsLang = languageCode === 'hinglish' ? 'hi-IN' : languageCode
       Speech.speak(textToRead, {
         language: ttsLang,
-        rate: 0.85,
-        pitch: 0.95,
+        rate: 0.78,    // slower = more gravitas, warm narrator pace
+        pitch: 0.82,   // lower = adult voice, not childlike
         onDone: onStop,
         onError: onStop,
         onStopped: onStop,
@@ -1168,6 +1067,7 @@ interface ChapterRowProps {
   content: string
   summary: string
   pastStatements?: string[]
+  userAge: number
   isExpanded: boolean
   isVisited: boolean
   isLast: boolean
@@ -1186,6 +1086,7 @@ function ChapterRow({
   content,
   summary,
   pastStatements,
+  userAge,
   isExpanded,
   isVisited,
   isLast,
@@ -1267,13 +1168,6 @@ function ChapterRow({
         />
 
         {/* Dot explosion animation — renders behind content */}
-        {isExpanded && (
-          <DotExplosion
-            isActive={isExpanded}
-            accentColor={chapter.accent}
-            pattern={chapter.dotPattern}
-          />
-        )}
 
         {/* Header row — tap to expand */}
         <TouchableOpacity
@@ -1339,7 +1233,7 @@ function ChapterRow({
                 {summary ? (
                   <SummaryCard summary={summary} accentColor={chapter.accent} />
                 ) : null}
-                <PastRevealCards statements={pastStatements} />
+                <PastRevealCards statements={pastStatements} age={userAge} />
               </>
             ) : content ? (
               <>
@@ -1544,11 +1438,56 @@ export function ReadingScreen() {
 
   const {
     selectedLanguage,
-    ttsEnabled,
     setLanguage,
     loadSettings,
     isSettingsLoaded,
   } = useSettingsStore()
+
+  // Compute user's age from birth profile
+  const userAge = useMemo(
+    () => computeAge(birthProfile?.birth_date),
+    [birthProfile?.birth_date]
+  )
+
+  const [expandedId, setExpandedId] = useState<string | null>('past')
+  const [visitedIds, setVisitedIds] = useState<Set<string>>(new Set(['past']))
+  const [showLangPicker, setShowLangPicker] = useState(false)
+  const [playingChapterId, setPlayingChapterId] = useState<string | null>(null)
+
+  // Load settings on mount
+  useEffect(() => {
+    if (!isSettingsLoaded) {
+      loadSettings()
+    },
+            // ─── MAIN READING SCREEN ───────────────────────────────────────────────────────
+export function ReadingScreen() {
+  const navigation = useNavigation()
+  const {
+    reading,
+    isGenerating,
+    isRegenerating,
+    generationStatus,
+    generationProgress,
+    chaptersDone,
+    parallelOraclesActive,
+    currentLanguageCode,
+    regenerateInLanguage,
+  } = useReadingStore()
+
+  const { session, birthProfile } = useAuthStore()
+
+  const {
+    selectedLanguage,
+    setLanguage,
+    loadSettings,
+    isSettingsLoaded,
+  } = useSettingsStore()
+
+  // Compute user's age from birth profile
+  const userAge = useMemo(
+    () => computeAge(birthProfile?.birth_date),
+    [birthProfile?.birth_date]
+  )
 
   const [expandedId, setExpandedId] = useState<string | null>('past')
   const [visitedIds, setVisitedIds] = useState<Set<string>>(new Set(['past']))
@@ -1625,11 +1564,20 @@ export function ReadingScreen() {
     setPlayingChapterId(null)
   }
 
-  // The "Before We Begin" chapter summary — build from present_statements
+  // Fix: build a meaningful age-aware summary for "Before We Begin"
   const beforeWeBeginSummary = useMemo(() => {
-    if (!reading?.present_statements?.length) return ''
-    return `These statements are drawn from the stars and written for your exact birth chart. The past ones are things the cosmos saw in your story — tap "Resonates" or "Not quite" for each. The future ones are prophecies written in light.`
-  }, [reading?.present_statements])
+    if (!reading?.past_statements?.length) return ''
+    const parsed = parsePastStatements(reading.past_statements)
+    const pastCount = parsed.filter((p) => p.tag === 'PAST').length
+    const futureCount = parsed.filter((p) => p.tag === 'FUTURE').length
+    if (userAge <= 3 && pastCount === 0) {
+      return 'You are very young — your whole story still lies ahead. The stars see a beautiful future waiting for you.'
+    }
+    if (pastCount === 0) {
+      return 'Nothing unusual in your past needs attention here. Your most important chapters are still ahead.'
+    }
+    return `The stars looked back at your ${userAge} year${userAge !== 1 ? 's' : ''} and found ${pastCount} moment${pastCount !== 1 ? 's' : ''} worth noting — and ${futureCount} prophet${futureCount !== 1 ? 'ies' : 'y'} waiting in your future.`
+  }, [reading?.past_statements, userAge])
 
   return (
     <View style={styles.root}>
@@ -1733,8 +1681,13 @@ export function ReadingScreen() {
               chapter={chapter}
               index={index}
               content={getContent(chapter.id)}
-              summary={getSummary(chapter.summaryKey)}
+              summary={
+                chapter.id === 'past'
+                  ? beforeWeBeginSummary
+                  : getSummary(chapter.summaryKey)
+              }
               pastStatements={reading?.past_statements ?? []}
+              userAge={userAge}
               isExpanded={expandedId === chapter.id}
               isVisited={visitedIds.has(chapter.id)}
               isLast={index === CHAPTERS.length - 1}
@@ -2008,3 +1961,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 })
+                                       
+     
