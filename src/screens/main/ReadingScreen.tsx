@@ -1,38 +1,39 @@
 // src/screens/main/ReadingScreen.tsx
-// ═══════════════════════════════════════════════════════════════════════════════
-// FIXES APPLIED:
-//
-// 1. "Reading/Story generation too slow — no feedback"
-//    Added a live GenerationOverlay that floats at the top of the screen when
-//    isGenerating is true. It shows:
-//      • Animated spinning orb (same cosmic aesthetic as HomeScreen)
-//      • "X of 5 chapters written" in real time (uses chaptersDone from store)
-//      • Progress bar with % done
-//      • Current status message from the AI service
-//    This overlay is dismissible — user can scroll the chapter list while
-//    generation continues in the background.
-//
-// 2. "No progress indicator — should show % done + chapters written live"
-//    Each chapter row now shows a "Generating…" badge when isGenerating and
-//    the chapter has not yet been written. Once a chapter is done (chaptersDone
-//    threshold passed) the badge changes to the expand arrow.
-//
-// 3. The wait card now shows the live progress bar instead of a static message.
-// ═══════════════════════════════════════════════════════════════════════════════
+// Full redesign — dot animations, TTS, language picker, age-aware past/future,
+// summary cards, new chapter content layout, reading seed persistence.
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react'
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Animated, LayoutAnimation, Platform, UIManager,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Animated,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+  Alert,
 } from 'react-native'
 import { Video, ResizeMode } from 'expo-av'
 import { BlurView } from 'expo-blur'
 import { LinearGradient } from 'expo-linear-gradient'
 import * as Haptics from 'expo-haptics'
+import * as Speech from 'expo-speech'
 import { useNavigation } from '@react-navigation/native'
 import { useReadingStore } from '../../store/readingStore'
+import { useSettingsStore } from '../../store/settingsStore'
+import { useAuthStore } from '../../store/authStore'
+import { LanguagePicker } from '../../components/ui/LanguagePicker'
 import { Videos } from '../../constants/videos'
 import { Fonts } from '../../constants/fonts'
+import type { Language } from '../../types'
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true)
@@ -47,7 +48,10 @@ const CHAPTERS = [
     subtitle: 'What the stars saw before you did',
     accent: '#C9A84C',
     isPastReveal: true,
-    oracleIndex: 0,  // which parallel oracle writes this (0-4)
+    oracleIndex: 0,
+    dotPattern: 'spiral',
+    summaryKey: null as string | null,
+    decorativeSymbol: '✦',
   },
   {
     id: 'chapter_identity',
@@ -55,6 +59,9 @@ const CHAPTERS = [
     subtitle: 'Your soul at its deepest level',
     accent: '#7B2FBE',
     oracleIndex: 0,
+    dotPattern: 'corners',
+    summaryKey: 'chapter_identity_summary',
+    decorativeSymbol: '◈',
   },
   {
     id: 'chapter_love',
@@ -62,6 +69,9 @@ const CHAPTERS = [
     subtitle: 'Your heart, your patterns, your people',
     accent: '#BE2F6E',
     oracleIndex: 1,
+    dotPattern: 'merge',
+    summaryKey: 'chapter_love_summary',
+    decorativeSymbol: '♡',
   },
   {
     id: 'chapter_career',
@@ -69,6 +79,9 @@ const CHAPTERS = [
     subtitle: 'Your gifts and your path to prosperity',
     accent: '#BEA02F',
     oracleIndex: 1,
+    dotPattern: 'grid',
+    summaryKey: 'chapter_career_summary',
+    decorativeSymbol: '◇',
   },
   {
     id: 'chapter_health',
@@ -76,6 +89,9 @@ const CHAPTERS = [
     subtitle: 'Your body, your energy, your rhythms',
     accent: '#2FBE6E',
     oracleIndex: 2,
+    dotPattern: 'ripple',
+    summaryKey: 'chapter_health_summary',
+    decorativeSymbol: '⟡',
   },
   {
     id: 'chapter_family',
@@ -83,6 +99,9 @@ const CHAPTERS = [
     subtitle: 'Where you came from, what you carry',
     accent: '#8E8EBE',
     oracleIndex: 2,
+    dotPattern: 'rain',
+    summaryKey: 'chapter_family_summary',
+    decorativeSymbol: '⊹',
   },
   {
     id: 'chapter_purpose',
@@ -90,6 +109,9 @@ const CHAPTERS = [
     subtitle: 'Why you are here. What you are building.',
     accent: '#FFD700',
     oracleIndex: 3,
+    dotPattern: 'supernova',
+    summaryKey: 'chapter_purpose_summary',
+    decorativeSymbol: '✺',
   },
   {
     id: 'chapter_now',
@@ -97,8 +119,708 @@ const CHAPTERS = [
     subtitle: 'Your current chapter and what it demands',
     accent: '#2FBEBE',
     oracleIndex: 3,
+    dotPattern: 'clocksweep',
+    summaryKey: 'chapter_now_summary',
+    decorativeSymbol: '◎',
   },
 ] as const
+
+// ─── Compute dot start positions for each animation pattern ───────────────────
+function computeDotStarts(pattern: string, N: number): Array<{ x: number; y: number }> {
+  return Array.from({ length: N }, (_, i) => {
+    const t = i / N
+    const R = 280
+    switch (pattern) {
+      case 'spiral': {
+        const angle = t * Math.PI * 6
+        const r = R * (0.7 + t * 0.3)
+        return { x: Math.cos(angle) * r, y: Math.sin(angle) * (r * 0.55) }
+      }
+      case 'corners': {
+        const corner = i % 4
+        const spread = (Math.random() - 0.5) * 80
+        const signs: [number, number][] = [[1, 1], [-1, 1], [1, -1], [-1, -1]]
+        return {
+          x: signs[corner][0] * (R * 0.55 + spread),
+          y: signs[corner][1] * (R * 0.35 + spread),
+        }
+      }
+      case 'merge': {
+        const side = i < N / 2 ? -1 : 1
+        return {
+          x: side * (R * 0.6 + Math.random() * 40),
+          y: (Math.random() - 0.5) * 160,
+        }
+      }
+      case 'grid': {
+        const cols = Math.ceil(Math.sqrt(N))
+        const col = i % cols
+        const row = Math.floor(i / cols)
+        return {
+          x: (col - cols / 2 + 0.5) * 65,
+          y: (row - cols / 2 + 0.5) * 55,
+        }
+      }
+      case 'ripple': {
+        const rings = 5
+        const ring = Math.floor(t * rings)
+        const inRing = (i % Math.ceil(N / rings)) / Math.ceil(N / rings)
+        const angle = inRing * Math.PI * 2
+        const r = (ring + 1) * (R / rings)
+        return { x: Math.cos(angle) * r, y: Math.sin(angle) * (r * 0.5) }
+      }
+      case 'rain': {
+        return {
+          x: (Math.random() - 0.5) * R * 1.5,
+          y: -(R * 0.5 + Math.random() * R * 0.4),
+        }
+      }
+      case 'supernova': {
+        const angle = t * Math.PI * 2
+        return { x: Math.cos(angle) * R, y: Math.sin(angle) * (R * 0.5) }
+      }
+      case 'clocksweep': {
+        const angle = t * Math.PI * 2 - Math.PI / 2
+        return { x: Math.cos(angle) * R, y: Math.sin(angle) * (R * 0.55) }
+      }
+      default: {
+        const angle = t * Math.PI * 2
+        return { x: Math.cos(angle) * R, y: Math.sin(angle) * (R * 0.5) }
+      }
+    }
+  })
+}
+
+// ─── Dot Assembly Animation Component ─────────────────────────────────────────
+// Dots fly in from outside when chapter opens, then fade out as text appears.
+const DOT_COUNT = 40
+
+interface DotExplosionProps {
+  isActive: boolean
+  accentColor: string
+  pattern: string
+}
+
+function DotExplosion({ isActive, accentColor, pattern }: DotExplosionProps) {
+  const anims = useRef(
+    Array.from({ length: DOT_COUNT }, () => ({
+      tx: new Animated.Value(0),
+      ty: new Animated.Value(0),
+      opacity: new Animated.Value(0),
+      scale: new Animated.Value(0.5),
+    }))
+  ).current
+
+  // Pre-compute start positions once (stable across renders)
+  const starts = useMemo(() => computeDotStarts(pattern, DOT_COUNT), [pattern])
+
+  useEffect(() => {
+    if (isActive) {
+      // Initialize all dots at their start positions (off-screen from card center)
+      anims.forEach((a, i) => {
+        a.tx.setValue(starts[i].x)
+        a.ty.setValue(starts[i].y)
+        a.opacity.setValue(0.85)
+        a.scale.setValue(0.8 + Math.random() * 0.6)
+      })
+
+      // Phase 1 + 2: All dots fly to random clustered positions near center
+      const flyAnims = anims.map((a, i) =>
+        Animated.parallel([
+          Animated.timing(a.tx, {
+            toValue: (Math.random() - 0.5) * 70,
+            duration: 550 + Math.random() * 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(a.ty, {
+            toValue: (Math.random() - 0.5) * 50,
+            duration: 550 + Math.random() * 200,
+            useNativeDriver: true,
+          }),
+        ])
+      )
+
+      // Phase 3: Fade out after clustering
+      const fadeAnims = anims.map((a) =>
+        Animated.timing(a.opacity, {
+          toValue: 0,
+          duration: 350,
+          useNativeDriver: true,
+        })
+      )
+
+      Animated.parallel([
+        Animated.parallel(flyAnims),
+        Animated.sequence([
+          Animated.delay(480),
+          Animated.stagger(8, fadeAnims),
+        ]),
+      ]).start()
+    } else {
+      // Instantly hide all dots when chapter collapses
+      anims.forEach((a) => {
+        a.opacity.setValue(0)
+      })
+    }
+  }, [isActive])
+
+  return (
+    <View
+      style={StyleSheet.absoluteFillObject}
+      pointerEvents="none"
+    >
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        {anims.map((a, i) => (
+          <Animated.View
+            key={i}
+            style={{
+              position: 'absolute',
+              width: 3,
+              height: 3,
+              borderRadius: 1.5,
+              backgroundColor: accentColor,
+              opacity: a.opacity,
+              transform: [
+                { translateX: a.tx },
+                { translateY: a.ty },
+                { scale: a.scale },
+              ],
+            }}
+          />
+        ))}
+      </View>
+    </View>
+  )
+}
+
+// ─── Text Fade-In Component (staggered paragraphs) ────────────────────────────
+interface FadeInTextProps {
+  text: string
+  accentColor: string
+  delay?: number
+}
+
+function FadeInText({ text, accentColor, delay = 700 }: FadeInTextProps) {
+  // Split text into paragraphs by double newline
+  const paragraphs = useMemo(() => {
+    return text
+      .split(/\n\n+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
+  }, [text])
+
+  const fadeAnims = useRef(
+    paragraphs.map(() => new Animated.Value(0))
+  ).current
+
+  const slideAnims = useRef(
+    paragraphs.map(() => new Animated.Value(12))
+  ).current
+
+  useEffect(() => {
+    const animations = paragraphs.map((_, i) =>
+      Animated.parallel([
+        Animated.timing(fadeAnims[i], {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+          delay: delay + i * 120,
+        }),
+        Animated.timing(slideAnims[i], {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+          delay: delay + i * 120,
+        }),
+      ])
+    )
+    Animated.parallel(animations).start()
+  }, [])
+
+  return (
+    <View>
+      {paragraphs.map((para, i) => (
+        <React.Fragment key={i}>
+          <Animated.Text
+            style={[
+              textStyles.paragraph,
+              {
+                opacity: fadeAnims[i] ?? 1,
+                transform: [{ translateY: slideAnims[i] ?? 0 }],
+              },
+            ]}
+          >
+            {para}
+          </Animated.Text>
+          {i < paragraphs.length - 1 && (
+            <View style={textStyles.midDivider}>
+              <Text style={[textStyles.midDividerDot, { color: accentColor + '60' }]}>
+                · · ·
+              </Text>
+            </View>
+          )}
+        </React.Fragment>
+      ))}
+    </View>
+  )
+}
+
+const textStyles = StyleSheet.create({
+  paragraph: {
+    fontFamily: Fonts.body,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.80)',
+    lineHeight: 30,
+    marginBottom: 4,
+    letterSpacing: 0.1,
+  },
+  midDivider: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  midDividerDot: {
+    fontFamily: Fonts.body,
+    fontSize: 18,
+    letterSpacing: 6,
+  },
+})
+
+// ─── Summary Card ──────────────────────────────────────────────────────────────
+interface SummaryCardProps {
+  summary: string
+  accentColor: string
+}
+
+function SummaryCard({ summary, accentColor }: SummaryCardProps) {
+  const fadeAnim = useRef(new Animated.Value(0)).current
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      delay: 400,
+      useNativeDriver: true,
+    }).start()
+  }, [])
+
+  return (
+    <Animated.View style={[summaryStyles.card, { opacity: fadeAnim }]}>
+      <LinearGradient
+        colors={[accentColor + '18', accentColor + '06', 'transparent']}
+        style={StyleSheet.absoluteFillObject}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <View style={[summaryStyles.topAccent, { backgroundColor: accentColor }]} />
+      <View style={summaryStyles.inner}>
+        <Text style={[summaryStyles.label, { color: accentColor }]}>✦  IN SIMPLE WORDS</Text>
+        <Text style={summaryStyles.text}>{summary}</Text>
+      </View>
+    </Animated.View>
+  )
+}
+
+const summaryStyles = StyleSheet.create({
+  card: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    overflow: 'hidden',
+    marginBottom: 24,
+    position: 'relative',
+  },
+  topAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    opacity: 0.7,
+  },
+  inner: {
+    padding: 18,
+    paddingTop: 20,
+  },
+  label: {
+    fontFamily: Fonts.accent,
+    fontSize: 9,
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  text: {
+    fontFamily: Fonts.mystical,
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.88)',
+    lineHeight: 28,
+    fontStyle: 'italic',
+  },
+})
+
+// ─── Age-Aware Past/Future Reveal Cards ────────────────────────────────────────
+interface PastStatement {
+  raw: string
+  tag: 'PAST' | 'FUTURE'
+  text: string
+}
+
+function parsePastStatements(statements: string[]): PastStatement[] {
+  return statements.map((s) => {
+    const futureMatch = s.match(/^\[FUTURE\]\s*/i)
+    const pastMatch = s.match(/^\[PAST\]\s*/i)
+    if (futureMatch) {
+      return { raw: s, tag: 'FUTURE', text: s.replace(/^\[FUTURE\]\s*/i, '').trim() }
+    }
+    if (pastMatch) {
+      return { raw: s, tag: 'PAST', text: s.replace(/^\[PAST\]\s*/i, '').trim() }
+    }
+    // Default to PAST if no tag (backward compatibility)
+    return { raw: s, tag: 'PAST', text: s.trim() }
+  })
+}
+
+function PastRevealCards({ statements }: { statements: string[] }) {
+  const [resonates, setResonates] = useState<Record<number, boolean | null>>({})
+  const [savedFutures, setSavedFutures] = useState<Record<number, boolean>>({})
+
+  const parsed = useMemo(() => parsePastStatements(statements), [statements])
+  const pastItems = parsed.filter((p) => p.tag === 'PAST')
+  const futureItems = parsed.filter((p) => p.tag === 'FUTURE')
+  const pastCount = Object.values(resonates).filter((v) => v === true).length
+  const allPastAnswered = Object.keys(resonates).length === pastItems.length && pastItems.length > 0
+
+  return (
+    <View>
+      {/* PAST section */}
+      {pastItems.map((stmt, i) => {
+        const status = resonates[i]
+        return (
+          <View
+            key={`past-${i}`}
+            style={[
+              past.card,
+              status === true && past.cardTrue,
+              status === false && past.cardFalse,
+            ]}
+          >
+            <Text style={past.statement}>{stmt.text}</Text>
+            <View style={past.btnRow}>
+              <TouchableOpacity
+                style={[past.btn, status === true && past.btnActiveTrue]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                  setResonates((prev) => ({ ...prev, [i]: true }))
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={past.btnText}>Resonates</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[past.btn, past.btnNo, status === false && past.btnActiveFalse]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                  setResonates((prev) => ({ ...prev, [i]: false }))
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[past.btnText, { color: 'rgba(255,255,255,0.4)' }]}>Not quite</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )
+      })}
+
+      {/* Resonance result after all past answered */}
+      {allPastAnswered && (
+        <View style={past.result}>
+          <Text style={past.resultText}>
+            {pastCount} of {pastItems.length} resonate with you.
+          </Text>
+          <Text style={past.resultSub}>
+            The stars don't lie. Your future is written just as clearly.
+          </Text>
+        </View>
+      )}
+
+      {/* Divider between PAST and FUTURE */}
+      {futureItems.length > 0 && (
+        <View style={past.futureDivider}>
+          <View style={past.futureLine} />
+          <Text style={past.futureDividerText}>✦  From Here, Your Story Unfolds  ✦</Text>
+          <View style={past.futureLine} />
+        </View>
+      )}
+
+        {/* FUTURE section */}
+      {futureItems.map((stmt, i) => {
+        const isSaved = savedFutures[i] ?? false
+        return (
+          <View key={`future-${i}`} style={past.futureCard}>
+            {/* Future badge */}
+            <View style={past.futureBadge}>
+              <Text style={past.futureBadgeText}>✦  In Your Future</Text>
+            </View>
+            <LinearGradient
+              colors={['rgba(201,168,76,0.08)', 'rgba(255,215,0,0.03)', 'transparent']}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <Text style={past.futureStatement}>{stmt.text}</Text>
+            <TouchableOpacity
+              style={[past.saveBtn, isSaved && past.saveBtnDone]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+                setSavedFutures((prev) => ({ ...prev, [i]: true }))
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={[past.saveBtnText, isSaved && { color: '#44FF88' }]}>
+                {isSaved ? '✓ Saved to Your Future' : 'Save This Prophecy'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )
+      })}
+    </View>
+  )
+}
+
+const past = StyleSheet.create({
+  card: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(13,13,43,0.5)',
+    padding: 16,
+    marginBottom: 12,
+  },
+  cardTrue: { borderColor: 'rgba(68,255,136,0.4)' },
+  cardFalse: { borderColor: 'rgba(255,255,255,0.04)' },
+  statement: {
+    fontFamily: Fonts.mystical,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.8)',
+    lineHeight: 26,
+    marginBottom: 14,
+  },
+  btnRow: { flexDirection: 'row', gap: 10 },
+  btn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.3)',
+    alignItems: 'center',
+  },
+  btnNo: { borderColor: 'rgba(255,255,255,0.1)' },
+  btnActiveTrue: {
+    backgroundColor: 'rgba(68,255,136,0.15)',
+    borderColor: 'rgba(68,255,136,0.5)',
+  },
+  btnActiveFalse: { backgroundColor: 'rgba(255,255,255,0.04)' },
+  btnText: {
+    fontFamily: Fonts.accent,
+    fontSize: 11,
+    color: '#C9A84C',
+    letterSpacing: 0.5,
+  },
+  result: {
+    backgroundColor: 'rgba(201,168,76,0.08)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.3)',
+    padding: 20,
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  resultText: {
+    fontFamily: Fonts.heading,
+    fontSize: 18,
+    color: '#C9A84C',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  resultSub: {
+    fontFamily: Fonts.mystical,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.5)',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  // ── Future divider
+  futureDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 20,
+  },
+  futureLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(201,168,76,0.35)',
+  },
+  futureDividerText: {
+    fontFamily: Fonts.accent,
+    fontSize: 9,
+    color: '#C9A84C',
+    letterSpacing: 1.5,
+    textAlign: 'center',
+  },
+  // ── Future cards
+  futureCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.35)',
+    backgroundColor: 'rgba(13,13,43,0.6)',
+    padding: 16,
+    marginBottom: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  futureBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(201,168,76,0.15)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.4)',
+  },
+  futureBadgeText: {
+    fontFamily: Fonts.accent,
+    fontSize: 9,
+    color: '#FFD700',
+    letterSpacing: 1.5,
+  },
+  futureStatement: {
+    fontFamily: Fonts.mystical,
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.88)',
+    lineHeight: 26,
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  saveBtn: {
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.4)',
+    alignItems: 'center',
+    backgroundColor: 'rgba(201,168,76,0.08)',
+  },
+  saveBtnDone: {
+    borderColor: 'rgba(68,255,136,0.5)',
+    backgroundColor: 'rgba(68,255,136,0.08)',
+  },
+  saveBtnText: {
+    fontFamily: Fonts.accent,
+    fontSize: 11,
+    color: '#C9A84C',
+    letterSpacing: 0.5,
+  },
+})
+// ─── TTS Play/Pause Button ─────────────────────────────────────────────────────
+interface TtsButtonProps {
+  chapterId: string
+  accentColor: string
+  textToRead: string
+  languageCode: string
+  playingChapterId: string | null
+  onPlay: (id: string) => void
+  onStop: () => void
+}
+
+function TtsButton({
+  chapterId,
+  accentColor,
+  textToRead,
+  languageCode,
+  playingChapterId,
+  onPlay,
+  onStop,
+}: TtsButtonProps) {
+  const isPlaying = playingChapterId === chapterId
+  const pulseAnim = useRef(new Animated.Value(1)).current
+
+  useEffect(() => {
+    if (isPlaying) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.3,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start()
+    } else {
+      pulseAnim.setValue(1)
+    }
+  }, [isPlaying])
+
+  const handlePress = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+    if (isPlaying) {
+      await Speech.stop()
+      onStop()
+    } else {
+      onPlay(chapterId)
+      // Map Hinglish to hi-IN for TTS
+      const ttsLang = languageCode === 'hinglish' ? 'hi-IN' : languageCode
+      Speech.speak(textToRead, {
+        language: ttsLang,
+        rate: 0.85,
+        pitch: 0.95,
+        onDone: onStop,
+        onError: onStop,
+        onStopped: onStop,
+      })
+    }
+  }, [isPlaying, textToRead, languageCode, chapterId])
+
+  return (
+    <TouchableOpacity
+      onPress={handlePress}
+      style={tts.btn}
+      activeOpacity={0.7}
+    >
+      <Animated.View
+        style={[
+          tts.icon,
+          { borderColor: accentColor + '70' },
+          isPlaying && { transform: [{ scale: pulseAnim }] },
+        ]}
+      >
+        <Text style={[tts.iconText, { color: accentColor }]}>
+          {isPlaying ? '⏸' : '▶'}
+        </Text>
+      </Animated.View>
+    </TouchableOpacity>
+  )
+}
+
+const tts = StyleSheet.create({
+  btn: {
+    padding: 4,
+  },
+  icon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  iconText: {
+    fontSize: 11,
+  },
+})
 
 // ─── Progress Dots ─────────────────────────────────────────────────────────────
 function ProgressDots({
@@ -109,7 +831,7 @@ function ProgressDots({
   visitedIds: Set<string>
 }) {
   return (
-    <View style={dots.row}>
+    <View style={pdots.row}>
       {CHAPTERS.map((ch) => {
         const isActive = ch.id === expandedId
         const isDone = visitedIds.has(ch.id) && ch.id !== expandedId
@@ -117,21 +839,21 @@ function ProgressDots({
           <View
             key={ch.id}
             style={[
-              dots.dot,
-              isActive && dots.dotActive,
-              isDone && dots.dotDone,
+              pdots.dot,
+              isActive && pdots.dotActive,
+              isDone && pdots.dotDone,
             ]}
           />
         )
       })}
-      <Text style={dots.label}>
+      <Text style={pdots.label}>
         {visitedIds.size} of {CHAPTERS.length} read
       </Text>
     </View>
   )
 }
 
-const dots = StyleSheet.create({
+const pdots = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -161,146 +883,39 @@ const dots = StyleSheet.create({
   },
 })
 
-// ─── Past Reveal Cards ─────────────────────────────────────────────────────────
-function PastRevealCards({ statements }: { statements: string[] }) {
-  const [resonates, setResonates] = useState<Record<number, boolean | null>>({})
-  const count = Object.values(resonates).filter(v => v === true).length
-
-  return (
-    <View>
-      {statements.map((stmt, i) => {
-        const status = resonates[i]
-        return (
-          <View
-            key={i}
-            style={[
-              past.card,
-              status === true && past.cardTrue,
-              status === false && past.cardFalse,
-            ]}
-          >
-            <Text style={past.statement}>{stmt}</Text>
-            <View style={past.btnRow}>
-              <TouchableOpacity
-                style={[past.btn, status === true && past.btnActiveTrue]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-                  setResonates(prev => ({ ...prev, [i]: true }))
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={past.btnText}>Resonates</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[past.btn, past.btnNo, status === false && past.btnActiveFalse]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-                  setResonates(prev => ({ ...prev, [i]: false }))
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={[past.btnText, { color: 'rgba(255,255,255,0.4)' }]}>Not quite</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )
-      })}
-      {Object.keys(resonates).length === statements.length && (
-        <View style={past.result}>
-          <Text style={past.resultText}>
-            {count} of {statements.length} resonate with you.
-          </Text>
-          <Text style={past.resultSub}>
-            The stars don't lie. Your future is written just as clearly.
-          </Text>
-        </View>
-      )}
-    </View>
-  )
-}
-
-const past = StyleSheet.create({
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    backgroundColor: 'rgba(13,13,43,0.5)',
-    padding: 16,
-    marginBottom: 12,
-  },
-  cardTrue: { borderColor: 'rgba(68,255,136,0.4)' },
-  cardFalse: { borderColor: 'rgba(255,255,255,0.04)' },
-  statement: {
-    fontFamily: Fonts.mystical,
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.8)',
-    lineHeight: 24,
-    marginBottom: 14,
-  },
-  btnRow: { flexDirection: 'row', gap: 10 },
-  btn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.3)',
-    alignItems: 'center',
-  },
-  btnNo: { borderColor: 'rgba(255,255,255,0.1)' },
-  btnActiveTrue: { backgroundColor: 'rgba(68,255,136,0.15)', borderColor: 'rgba(68,255,136,0.5)' },
-  btnActiveFalse: { backgroundColor: 'rgba(255,255,255,0.04)' },
-  btnText: { fontFamily: Fonts.accent, fontSize: 11, color: '#C9A84C', letterSpacing: 0.5 },
-  result: {
-    backgroundColor: 'rgba(201,168,76,0.08)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.3)',
-    padding: 20,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  resultText: {
-    fontFamily: Fonts.heading,
-    fontSize: 18,
-    color: '#C9A84C',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  resultSub: {
-    fontFamily: Fonts.mystical,
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-})
-
 // ─── Live Generation Overlay ───────────────────────────────────────────────────
-// NEW: Floats at the top of the scroll, shows real-time AI progress.
-// chaptersDone (0-5) comes from readingStore and increments as each oracle finishes.
 function GenerationOverlay({
   status,
   progress,
   chaptersDone,
   oraclesActive,
+  isRegenerating,
 }: {
   status: string
   progress: number
   chaptersDone: number
   oraclesActive: number
+  isRegenerating: boolean
 }) {
   const rotAnim = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
     Animated.loop(
-      Animated.timing(rotAnim, { toValue: 1, duration: 2500, useNativeDriver: true })
+      Animated.timing(rotAnim, {
+        toValue: 1,
+        duration: 2500,
+        useNativeDriver: true,
+      })
     ).start()
   }, [])
 
-  const rotate = rotAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] })
+  const rotate = rotAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  })
 
   return (
-    <BlurView intensity={20} tint="dark" style={overlay.card}>
+    <BlurView intensity={20} tint="dark" style={overlayStyles.card}>
       <LinearGradient
         colors={['rgba(201,168,76,0.12)', 'transparent']}
         style={StyleSheet.absoluteFillObject}
@@ -308,64 +923,65 @@ function GenerationOverlay({
         end={{ x: 1, y: 1 }}
       />
 
-      <View style={overlay.topRow}>
-        {/* Spinning orb */}
-        <View style={overlay.orbWrap}>
-          <Animated.View style={[overlay.ring, { transform: [{ rotate }] }]} />
-          <LinearGradient colors={['#C9A84C', '#7C3AED']} style={overlay.orbCore} />
+      <View style={overlayStyles.topRow}>
+        <View style={overlayStyles.orbWrap}>
+          <Animated.View
+            style={[overlayStyles.ring, { transform: [{ rotate }] }]}
+          />
+          <LinearGradient
+            colors={['#C9A84C', '#7C3AED']}
+            style={overlayStyles.orbCore}
+          />
         </View>
 
-        {/* Live chapter count + status */}
-        <View style={overlay.textCol}>
-          <Text style={overlay.chapterCount}>
+        <View style={overlayStyles.textCol}>
+          <Text style={overlayStyles.chapterCount}>
             {chaptersDone > 0
               ? `${chaptersDone} of 5 chapters written`
+              : isRegenerating
+              ? 'Regenerating in new language…'
               : 'Consulting the oracles…'}
           </Text>
-          <Text style={overlay.statusText} numberOfLines={1}>
+          <Text style={overlayStyles.statusText} numberOfLines={1}>
             {status || 'Awakening cosmic intelligence…'}
           </Text>
-          <Text style={overlay.oracleText}>
+          <Text style={overlayStyles.oracleText}>
             {oraclesActive > 0
               ? `${oraclesActive} oracle${oraclesActive !== 1 ? 's' : ''} running in parallel`
               : 'Merging all traditions…'}
           </Text>
         </View>
 
-        {/* % badge */}
-        <View style={overlay.pctBadge}>
-          <Text style={overlay.pctText}>{Math.min(Math.round(progress), 100)}%</Text>
+        <View style={overlayStyles.pctBadge}>
+          <Text style={overlayStyles.pctText}>
+            {Math.min(Math.round(progress), 100)}%
+          </Text>
         </View>
       </View>
 
-      {/* Progress bar */}
-      <View style={overlay.barTrack}>
-        <Animated.View
-          style={[
-            overlay.barFill,
-            { width: `${Math.min(progress, 100)}%` },
-          ]}
+      <View style={overlayStyles.barTrack}>
+        <View
+          style={[overlayStyles.barFill, { width: `${Math.min(progress, 100)}%` }]}
         />
       </View>
 
-      {/* Oracle dots */}
-      <View style={overlay.dotsRow}>
+      <View style={overlayStyles.dotsRow}>
         {Array.from({ length: 5 }).map((_, i) => (
           <View
             key={i}
             style={[
-              overlay.dot,
-              i < chaptersDone ? overlay.dotDone : overlay.dotPending,
+              overlayStyles.dot,
+              i < chaptersDone ? overlayStyles.dotDone : overlayStyles.dotPending,
             ]}
           />
         ))}
-        <Text style={overlay.dotsLabel}>5 AI oracles · usually 60-90 seconds</Text>
+        <Text style={overlayStyles.dotsLabel}>5 AI oracles · usually 60-90 seconds</Text>
       </View>
     </BlurView>
   )
 }
 
-const overlay = StyleSheet.create({
+const overlayStyles = StyleSheet.create({
   card: {
     borderRadius: 20,
     borderWidth: 1,
@@ -468,31 +1084,121 @@ const overlay = StyleSheet.create({
   },
 })
 
-// ─── Chapter Row (Timeline style) ──────────────────────────────────────────────
-function ChapterRow({
-  chapter,
-  index,
-  content,
-  pastStatements,
-  isExpanded,
-  isVisited,
-  isLast,
-  isGenerating,
-  chaptersDone,
-  onToggle,
-}: {
+// ─── Language Regen Banner ─────────────────────────────────────────────────────
+interface LangBannerProps {
+  currentLangCode: string
+  selectedLang: Language
+  onRegenerate: () => void
+}
+
+function LanguageRegenBanner({ currentLangCode, selectedLang, onRegenerate }: LangBannerProps) {
+  if (currentLangCode === selectedLang.code) return null
+
+  return (
+    <TouchableOpacity onPress={onRegenerate} activeOpacity={0.85} style={langBanner.wrap}>
+      <LinearGradient
+        colors={['rgba(201,168,76,0.18)', 'rgba(201,168,76,0.06)']}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <View style={langBanner.inner}>
+        <Text style={langBanner.flag}>{selectedLang.flag}</Text>
+        <View style={langBanner.textWrap}>
+          <Text style={langBanner.title}>
+            Reading is in English
+          </Text>
+          <Text style={langBanner.subtitle}>
+            Tap to regenerate in {selectedLang.name}
+          </Text>
+        </View>
+        <View style={langBanner.arrow}>
+          <Text style={langBanner.arrowText}>→</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  )
+}
+
+const langBanner = StyleSheet.create({
+  wrap: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.35)',
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  inner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 12,
+  },
+  flag: {
+    fontSize: 22,
+  },
+  textWrap: { flex: 1 },
+  title: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 2,
+  },
+  subtitle: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    color: '#C9A84C',
+  },
+  arrow: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(201,168,76,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowText: {
+    fontSize: 14,
+    color: '#C9A84C',
+  },
+})
+
+// ─── Chapter Row ───────────────────────────────────────────────────────────────
+interface ChapterRowProps {
   chapter: typeof CHAPTERS[number]
   index: number
   content: string
+  summary: string
   pastStatements?: string[]
   isExpanded: boolean
   isVisited: boolean
   isLast: boolean
   isGenerating: boolean
   chaptersDone: number
+  playingChapterId: string | null
+  languageCode: string
   onToggle: () => void
-}) {
+  onPlay: (id: string) => void
+  onStop: () => void
+}
+
+function ChapterRow({
+  chapter,
+  index,
+  content,
+  summary,
+  pastStatements,
+  isExpanded,
+  isVisited,
+  isLast,
+  isGenerating,
+  chaptersDone,
+  playingChapterId,
+  languageCode,
+  onToggle,
+  onPlay,
+  onStop,
+}: ChapterRowProps) {
   const arrowAnim = useRef(new Animated.Value(0)).current
+  const contentKey = useRef(0) // Force re-mount of FadeInText on each open
 
   useEffect(() => {
     Animated.timing(arrowAnim, {
@@ -500,6 +1206,10 @@ function ChapterRow({
       duration: 250,
       useNativeDriver: true,
     }).start()
+
+    if (isExpanded) {
+      contentKey.current += 1
+    }
   }, [isExpanded])
 
   const arrowRotate = arrowAnim.interpolate({
@@ -507,8 +1217,6 @@ function ChapterRow({
     outputRange: ['0deg', '180deg'],
   })
 
-  // NEW: a chapter is "ready" once the oracle that writes it has completed.
-  // oracleIndex 0→chaptersDone≥1, 1→chaptersDone≥2, etc.
   const isChapterReady = chaptersDone > chapter.oracleIndex
 
   const nodeColor = isExpanded
@@ -519,70 +1227,153 @@ function ChapterRow({
     ? 'rgba(201,168,76,0.5)'
     : 'rgba(255,255,255,0.15)'
 
+  // Build the text to read via TTS (summary first, then content)
+  const ttsText = chapter.isPastReveal
+    ? pastStatements?.map(s => s.replace(/^\[(PAST|FUTURE)\]\s*/i, '')).join('. ') ?? ''
+    : `${summary ? summary + '. ' : ''}${content}`
+
   return (
-    <View style={row.container}>
+    <View style={rowStyles.container}>
       {/* Timeline spine + node */}
-      <View style={row.spine}>
-        <View style={[row.node, { borderColor: nodeColor, backgroundColor: '#05050F' }]}>
-          <Text style={[row.nodeNum, { color: nodeColor }]}>{ROMAN[index]}</Text>
+      <View style={rowStyles.spine}>
+        <View
+          style={[
+            rowStyles.node,
+            { borderColor: nodeColor, backgroundColor: '#05050F' },
+          ]}
+        >
+          <Text style={[rowStyles.nodeNum, { color: nodeColor }]}>
+            {ROMAN[index]}
+          </Text>
         </View>
-        {!isLast && <View style={row.line} />}
+        {!isLast && <View style={rowStyles.line} />}
       </View>
 
       {/* Card */}
-      <View style={[row.card, { borderColor: chapter.accent + '30' }]}>
+      <View style={[rowStyles.card, { borderColor: chapter.accent + '30' }]}>
+        {/* Top color line */}
         <LinearGradient
           colors={[chapter.accent, 'transparent']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
-          style={row.topLine}
+          style={rowStyles.topLine}
         />
+        {/* Background glow */}
         <LinearGradient
-          colors={[chapter.accent + '10', 'transparent']}
+          colors={[chapter.accent + '0D', 'transparent']}
           style={StyleSheet.absoluteFillObject}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         />
 
+        {/* Dot explosion animation — renders behind content */}
+        {isExpanded && (
+          <DotExplosion
+            isActive={isExpanded}
+            accentColor={chapter.accent}
+            pattern={chapter.dotPattern}
+          />
+        )}
+
+        {/* Header row — tap to expand */}
         <TouchableOpacity
-          style={row.header}
+          style={rowStyles.header}
           onPress={() => {
-            if (!isChapterReady && isGenerating) return  // not ready yet
+            if (!isChapterReady && isGenerating) return
             LayoutAnimation.easeInEaseOut()
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
             onToggle()
           }}
           activeOpacity={isChapterReady ? 0.8 : 1}
         >
-          <View style={row.headerText}>
-            <Text style={row.chapterLabel}>Chapter {ROMAN[index]}</Text>
-            <Text style={[row.title, { color: chapter.accent }]}>{chapter.title}</Text>
-            <Text style={row.subtitle}>{chapter.subtitle}</Text>
+          <View style={rowStyles.headerText}>
+            <Text style={rowStyles.chapterLabel}>Chapter {ROMAN[index]}</Text>
+            <Text style={[rowStyles.title, { color: chapter.accent }]}>
+              {chapter.title}
+            </Text>
+            <Text style={rowStyles.subtitle}>{chapter.subtitle}</Text>
           </View>
 
-          {/* NEW: show "Generating…" badge or expand arrow */}
-          {isGenerating && !isChapterReady ? (
-            <View style={row.generatingBadge}>
-              <Text style={row.generatingDot}>◌</Text>
-              <Text style={row.generatingText}>Writing…</Text>
-            </View>
-          ) : (
-            <Animated.Text
-              style={[row.arrow, { color: chapter.accent, transform: [{ rotate: arrowRotate }] }]}
-            >
-              ›
-            </Animated.Text>
-          )}
+          <View style={rowStyles.headerRight}>
+            {/* TTS button — only show when chapter is ready and has content */}
+            {isChapterReady && ttsText.length > 0 && (
+              <TtsButton
+                chapterId={chapter.id}
+                accentColor={chapter.accent}
+                textToRead={ttsText}
+                languageCode={languageCode}
+                playingChapterId={playingChapterId}
+                onPlay={onPlay}
+                onStop={onStop}
+              />
+            )}
+
+            {/* Expand arrow or Generating badge */}
+            {isGenerating && !isChapterReady ? (
+              <View style={rowStyles.generatingBadge}>
+                <Text style={rowStyles.generatingDot}>◌</Text>
+                <Text style={rowStyles.generatingText}>Writing…</Text>
+              </View>
+            ) : (
+              <Animated.Text
+                style={[
+                  rowStyles.arrow,
+                  {
+                    color: chapter.accent,
+                    transform: [{ rotate: arrowRotate }],
+                  },
+                ]}
+              >
+                ›
+              </Animated.Text>
+            )}
+          </View>
         </TouchableOpacity>
 
+        {/* Expanded body */}
         {isExpanded && (
-          <View style={row.body}>
+          <View style={rowStyles.body}>
             {chapter.isPastReveal && pastStatements ? (
-              <PastRevealCards statements={pastStatements} />
+              <>
+                {/* Summary for Before We Begin */}
+                {summary ? (
+                  <SummaryCard summary={summary} accentColor={chapter.accent} />
+                ) : null}
+                <PastRevealCards statements={pastStatements} />
+              </>
             ) : content ? (
-              <Text style={row.content}>{content}</Text>
+              <>
+        {/* Summary card */}
+                {summary ? (
+                  <SummaryCard summary={summary} accentColor={chapter.accent} />
+                ) : null}
+
+                {/* Decorative section opener */}
+                <View style={rowStyles.sectionOpener}>
+                  <View style={[rowStyles.openerLine, { backgroundColor: chapter.accent + '40' }]} />
+                  <Text style={[rowStyles.openerSymbol, { color: chapter.accent + '90' }]}>
+                    {chapter.decorativeSymbol}
+                  </Text>
+                  <View style={[rowStyles.openerLine, { backgroundColor: chapter.accent + '40' }]} />
+                </View>
+
+                {/* Staggered paragraph fade-in */}
+                <FadeInText
+                  key={`${chapter.id}-${contentKey.current}`}
+                  text={content}
+                  accentColor={chapter.accent}
+                  delay={650}
+                />
+
+                {/* Closing symbol */}
+                <View style={rowStyles.closingSymbol}>
+                  <Text style={{ color: chapter.accent + '50', fontSize: 16 }}>
+                    {chapter.decorativeSymbol}
+                  </Text>
+                </View>
+              </>
             ) : (
-              <Text style={row.placeholderText}>
+              <Text style={rowStyles.placeholderText}>
                 Your reading is still being generated. Please wait a moment.
               </Text>
             )}
@@ -593,7 +1384,7 @@ function ChapterRow({
   )
 }
 
-const row = StyleSheet.create({
+const rowStyles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -605,9 +1396,9 @@ const row = StyleSheet.create({
     paddingTop: 16,
   },
   node: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -621,7 +1412,7 @@ const row = StyleSheet.create({
   line: {
     width: 1,
     flex: 1,
-    minHeight: 16,
+    minHeight: 20,
     marginTop: 4,
     backgroundColor: 'rgba(201,168,76,0.2)',
   },
@@ -630,7 +1421,7 @@ const row = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     overflow: 'hidden',
-    backgroundColor: 'rgba(13,13,43,0.6)',
+    backgroundColor: 'rgba(13,13,43,0.65)',
     position: 'relative',
   },
   topLine: {
@@ -639,28 +1430,35 @@ const row = StyleSheet.create({
     left: 0,
     right: 0,
     height: 2,
+    zIndex: 2,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 18,
-    paddingTop: 20,
+    paddingTop: 22,
     gap: 10,
   },
   headerText: { flex: 1 },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
   chapterLabel: {
     fontFamily: Fonts.accent,
     fontSize: 8,
     color: 'rgba(255,255,255,0.25)',
     letterSpacing: 2,
     textTransform: 'uppercase',
-    marginBottom: 5,
+    marginBottom: 6,
   },
   title: {
     fontFamily: Fonts.heading,
     fontSize: 15,
-    lineHeight: 21,
-    marginBottom: 3,
+    lineHeight: 22,
+    marginBottom: 4,
   },
   subtitle: {
     fontFamily: Fonts.body,
@@ -669,10 +1467,9 @@ const row = StyleSheet.create({
     lineHeight: 17,
   },
   arrow: {
-    fontSize: 20,
+    fontSize: 22,
     paddingRight: 2,
   },
-  // NEW: generating badge shown on chapters not yet written
   generatingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -696,16 +1493,28 @@ const row = StyleSheet.create({
   },
   body: {
     paddingHorizontal: 18,
-    paddingBottom: 18,
+    paddingBottom: 24,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
-    paddingTop: 16,
+    paddingTop: 20,
   },
-  content: {
-    fontFamily: Fonts.body,
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.75)',
-    lineHeight: 28,
+  sectionOpener: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 24,
+  },
+  openerLine: {
+    flex: 1,
+    height: 1,
+  },
+  openerSymbol: {
+    fontSize: 18,
+  },
+  closingSymbol: {
+    alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 4,
   },
   placeholderText: {
     fontFamily: Fonts.body,
@@ -722,19 +1531,53 @@ export function ReadingScreen() {
   const {
     reading,
     isGenerating,
+    isRegenerating,
     generationStatus,
     generationProgress,
     chaptersDone,
     parallelOraclesActive,
+    currentLanguageCode,
+    regenerateInLanguage,
   } = useReadingStore()
+
+  const { session, birthProfile } = useAuthStore()
+
+  const {
+    selectedLanguage,
+    ttsEnabled,
+    setLanguage,
+    loadSettings,
+    isSettingsLoaded,
+  } = useSettingsStore()
 
   const [expandedId, setExpandedId] = useState<string | null>('past')
   const [visitedIds, setVisitedIds] = useState<Set<string>>(new Set(['past']))
+  const [showLangPicker, setShowLangPicker] = useState(false)
+  const [playingChapterId, setPlayingChapterId] = useState<string | null>(null)
+
+  // Load settings on mount
+  useEffect(() => {
+    if (!isSettingsLoaded) {
+      loadSettings()
+    }
+  }, [])
+
+  // Stop TTS when navigating away
+  useEffect(() => {
+    return () => {
+      Speech.stop()
+    }
+  }, [])
 
   function handleToggle(id: string) {
     LayoutAnimation.easeInEaseOut()
-    setVisitedIds(prev => new Set([...prev, id]))
-    setExpandedId(prev => (prev === id ? null : id))
+    setVisitedIds((prev) => new Set([...prev, id]))
+    setExpandedId((prev) => (prev === id ? null : id))
+    // Stop TTS when switching chapters
+    if (playingChapterId && playingChapterId !== id) {
+      Speech.stop()
+      setPlayingChapterId(null)
+    }
   }
 
   function getContent(id: string): string {
@@ -744,8 +1587,53 @@ export function ReadingScreen() {
     return typeof val === 'string' ? val : ''
   }
 
+  function getSummary(summaryKey: string | null): string {
+    if (!summaryKey || !reading) return ''
+    const key = summaryKey as keyof typeof reading
+    const val = reading[key]
+    return typeof val === 'string' ? val : ''
+  }
+
+  function handleLanguageSelect(lang: Language) {
+    setLanguage(lang)
+  }
+
+  function handleRegenerateInLanguage() {
+    if (!session || !birthProfile) return
+    Alert.alert(
+      `Regenerate in ${selectedLanguage.name}?`,
+      `Your full reading will be regenerated in ${selectedLanguage.name}. This will take about 60-90 seconds.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Regenerate',
+          onPress: () => {
+            Speech.stop()
+            setPlayingChapterId(null)
+            regenerateInLanguage(session.user.id, birthProfile as any, selectedLanguage)
+          },
+        },
+      ]
+    )
+  }
+
+  function handlePlay(id: string) {
+    setPlayingChapterId(id)
+  }
+
+  function handleStop() {
+    setPlayingChapterId(null)
+  }
+
+  // The "Before We Begin" chapter summary — build from present_statements
+  const beforeWeBeginSummary = useMemo(() => {
+    if (!reading?.present_statements?.length) return ''
+    return `These statements are drawn from the stars and written for your exact birth chart. The past ones are things the cosmos saw in your story — tap "Resonates" or "Not quite" for each. The future ones are prophecies written in light.`
+  }, [reading?.present_statements])
+
   return (
     <View style={styles.root}>
+      {/* Background video */}
       <Video
         source={Videos.readingBg}
         style={StyleSheet.absoluteFillObject}
@@ -755,58 +1643,89 @@ export function ReadingScreen() {
         isMuted
       />
       <LinearGradient
-        colors={['rgba(5,5,15,0.5)', 'rgba(5,5,15,0.75)', 'rgba(5,5,15,0.92)']}
+        colors={['rgba(5,5,15,0.45)', 'rgba(5,5,15,0.75)', 'rgba(5,5,15,0.93)']}
         style={StyleSheet.absoluteFillObject}
       />
 
       {/* Top bar */}
       <View style={styles.topBar}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => {
+            Speech.stop()
+            navigation.goBack()
+          }}
           style={styles.backBtn}
           activeOpacity={0.7}
         >
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
+
         <Text style={styles.pageTitle}>The Book of Your Soul</Text>
-        <View style={{ width: 60 }} />
+
+        {/* Globe button — language picker */}
+        <TouchableOpacity
+          style={styles.globeBtn}
+          onPress={() => setShowLangPicker(true)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.globeBtnInner}>
+            <Text style={styles.globeFlag}>
+              {selectedLanguage.flag}
+            </Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
+      {/* Main scroll */}
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Hero ──────────────────────────────────────────────────────── */}
+        {/* Hero */}
         <View style={styles.hero}>
           <Text style={styles.heroEyebrow}>✦ Your complete reading</Text>
-          <Text style={styles.heroTitle}>Eight Chapters.{'\n'}Every Tradition.</Text>
-          <Text style={styles.heroSub}>Your complete truth, written in the stars.</Text>
+          <Text style={styles.heroTitle}>
+            {'Eight Chapters.\nEvery Tradition.'}
+          </Text>
+          <Text style={styles.heroSub}>
+            Your complete truth, written in the stars.
+          </Text>
         </View>
 
-        {/* ── Progress dots ─────────────────────────────────────────────── */}
+        {/* Progress dots */}
         <ProgressDots expandedId={expandedId} visitedIds={visitedIds} />
 
-        {/* ── NEW: Live generation overlay — shows when AI is running ───── */}
+        {/* Language mismatch banner */}
+        {!isGenerating && reading && (
+          <LanguageRegenBanner
+            currentLangCode={currentLanguageCode}
+            selectedLang={selectedLanguage}
+            onRegenerate={handleRegenerateInLanguage}
+          />
+        )}
+
+        {/* Live generation overlay */}
         {isGenerating && (
           <GenerationOverlay
             status={generationStatus}
             progress={generationProgress}
             chaptersDone={chaptersDone}
             oraclesActive={parallelOraclesActive}
+            isRegenerating={isRegenerating}
           />
         )}
 
-        {/* ── Static wait card — shown only when not yet generating and no reading */}
+        {/* Static wait card */}
         {!isGenerating && !reading && (
           <BlurView intensity={15} tint="dark" style={styles.waitCard}>
             <Text style={styles.waitIcon}>◌</Text>
             <Text style={styles.waitText}>
-              Your reading is being generated.{'\n'}Return once it completes.
+              {'Your reading is being generated.\nReturn once it completes.'}
             </Text>
           </BlurView>
         )}
 
-        {/* ── Timeline chapters ─────────────────────────────────────────── */}
+        {/* Timeline chapters */}
         <View style={styles.timelineWrap}>
           {CHAPTERS.map((chapter, index) => (
             <ChapterRow
@@ -814,24 +1733,33 @@ export function ReadingScreen() {
               chapter={chapter}
               index={index}
               content={getContent(chapter.id)}
-              pastStatements={reading?.past_statements || []}
+              summary={getSummary(chapter.summaryKey)}
+              pastStatements={reading?.past_statements ?? []}
               isExpanded={expandedId === chapter.id}
               isVisited={visitedIds.has(chapter.id)}
               isLast={index === CHAPTERS.length - 1}
               isGenerating={isGenerating}
               chaptersDone={chaptersDone}
+              playingChapterId={playingChapterId}
+              languageCode={selectedLanguage.code}
               onToggle={() => handleToggle(chapter.id)}
+              onPlay={handlePlay}
+              onStop={handleStop}
             />
           ))}
         </View>
 
-        {/* ── Compatible signs ──────────────────────────────────────────── */}
+        {/* Compatible signs */}
         {reading?.compatible_signs && (
           <>
             <Text style={styles.sectionLabel}>Your Highest Compatibility</Text>
             <View style={styles.compatRow}>
               {reading.compatible_signs.map((c, i) => (
                 <BlurView key={i} intensity={15} tint="dark" style={styles.compatCard}>
+                  <LinearGradient
+                    colors={['rgba(201,168,76,0.1)', 'transparent']}
+                    style={StyleSheet.absoluteFillObject}
+                  />
                   <Text style={styles.compatSign}>{c.sign}</Text>
                   <Text style={styles.compatPct}>{c.percentage}%</Text>
                 </BlurView>
@@ -840,10 +1768,10 @@ export function ReadingScreen() {
           </>
         )}
 
-        {/* ── Career strengths ──────────────────────────────────────────── */}
+        {/* Career strengths */}
         {reading?.career_strengths && (
           <>
-            <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Your Natural Gifts</Text>
+            <Text style={[styles.sectionLabel, { marginTop: 28 }]}>Your Natural Gifts</Text>
             {reading.career_strengths.map((s, i) => (
               <View key={i} style={styles.strengthRow}>
                 <View style={styles.strengthDot} />
@@ -853,8 +1781,44 @@ export function ReadingScreen() {
           </>
         )}
 
-        <View style={{ height: 100 }} />
+        {/* Best months */}
+        {reading?.best_months_love && reading?.best_months_money && (
+          <>
+            <Text style={[styles.sectionLabel, { marginTop: 28 }]}>Your Power Months</Text>
+            <View style={styles.monthsRow}>
+              <BlurView intensity={12} tint="dark" style={styles.monthCard}>
+                <Text style={styles.monthCardTitle}>♡ Love</Text>
+                <Text style={styles.monthCardMonths}>
+                  {reading.best_months_love
+                    .map((m) =>
+                      new Date(2024, m - 1, 1).toLocaleString('default', { month: 'short' })
+                    )
+                    .join('  ·  ')}
+                </Text>
+              </BlurView>
+              <BlurView intensity={12} tint="dark" style={styles.monthCard}>
+                <Text style={styles.monthCardTitle}>◇ Money</Text>
+                <Text style={styles.monthCardMonths}>
+                  {reading.best_months_money
+                    .map((m) =>
+                      new Date(2024, m - 1, 1).toLocaleString('default', { month: 'short' })
+                    )
+                    .join('  ·  ')}
+                </Text>
+              </BlurView>
+            </View>
+          </>
+        )}
+
+        <View style={{ height: 120 }} />
       </ScrollView>
+
+      {/* Language picker modal */}
+      <LanguagePicker
+        visible={showLangPicker}
+        onClose={() => setShowLangPicker(false)}
+        onSelect={handleLanguageSelect}
+      />
     </View>
   )
 }
@@ -871,26 +1835,52 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   backBtn: { paddingVertical: 8, paddingRight: 12 },
-  backText: { fontFamily: Fonts.body, fontSize: 14, color: '#C9A84C' },
+  backText: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: '#C9A84C',
+  },
   pageTitle: {
     fontFamily: Fonts.heading,
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.45)',
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.40)',
     letterSpacing: 1,
     textAlign: 'center',
     flex: 1,
   },
+  globeBtn: {
+    padding: 4,
+  },
+  globeBtnInner: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(201,168,76,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  globeFlag: {
+    fontSize: 18,
+  },
 
-  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+  scroll: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
 
-  hero: { alignItems: 'center', paddingBottom: 24 },
+  hero: {
+    alignItems: 'center',
+    paddingBottom: 28,
+  },
   heroEyebrow: {
     fontFamily: Fonts.accent,
     fontSize: 9,
     letterSpacing: 3,
     color: 'rgba(201,168,76,0.5)',
     textTransform: 'uppercase',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   heroTitle: {
     fontFamily: Fonts.heading,
@@ -898,8 +1888,8 @@ const styles = StyleSheet.create({
     color: '#C9A84C',
     textAlign: 'center',
     letterSpacing: 0.5,
-    lineHeight: 36,
-    marginBottom: 8,
+    lineHeight: 38,
+    marginBottom: 10,
   },
   heroSub: {
     fontFamily: Fonts.mystical,
@@ -944,7 +1934,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 
-  compatRow: { flexDirection: 'row', gap: 12 },
+  compatRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   compatCard: {
     flex: 1,
     borderRadius: 14,
@@ -955,14 +1948,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  compatSign: { fontFamily: Fonts.heading, fontSize: 14, color: '#C9A84C' },
-  compatPct: { fontFamily: Fonts.accentBold, fontSize: 20, color: '#FFD700' },
+  compatSign: {
+    fontFamily: Fonts.heading,
+    fontSize: 13,
+    color: '#C9A84C',
+  },
+  compatPct: {
+    fontFamily: Fonts.accentBold,
+    fontSize: 20,
+    color: '#FFD700',
+  },
 
   strengthRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.05)',
   },
@@ -978,5 +1979,32 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     flex: 1,
     lineHeight: 22,
+  },
+
+  monthsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  monthCard: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.15)',
+    overflow: 'hidden',
+    padding: 14,
+    alignItems: 'center',
+    gap: 8,
+  },
+  monthCardTitle: {
+    fontFamily: Fonts.accent,
+    fontSize: 10,
+    color: '#C9A84C',
+    letterSpacing: 1,
+  },
+  monthCardMonths: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
   },
 })
