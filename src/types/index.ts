@@ -116,9 +116,32 @@ export interface CompatibleSign {
   percentage: number
 }
 
+// ─── Reading Seed — stable personality fingerprint saved after first generation ─
+export interface ReadingSeed {
+  core_traits: string[]
+  life_themes: string[]
+  relationship_pattern: string
+  career_archetype: string
+  spiritual_direction: string
+  past_statement_themes: string[]
+}
+
+// ─── Language — for multilingual reading generation ───────────────────────────
+export interface Language {
+  code: string          // BCP47 code e.g. 'en-US', 'hi-IN'
+  name: string          // English display name e.g. 'Hindi'
+  nativeName: string    // Native name e.g. 'हिन्दी'
+  promptInstruction: string // What to tell the AI
+  flag: string          // Emoji flag
+}
+
 export interface ParsedReading {
+  // ── Past / Present ──────────────────────────────────────────────────────────
+  // Each string is prefixed with [PAST] or [FUTURE] for age-aware rendering
   past_statements: string[]
   present_statements: string[]
+
+  // ── Chapters — main content ──────────────────────────────────────────────────
   chapter_identity: string
   chapter_love: string
   chapter_career: string
@@ -126,12 +149,26 @@ export interface ParsedReading {
   chapter_family: string
   chapter_purpose: string
   chapter_now: string
+
+  // ── Chapter summaries — 2-3 plain sentences per chapter ──────────────────────
+  chapter_identity_summary: string
+  chapter_love_summary: string
+  chapter_career_summary: string
+  chapter_health_summary: string
+  chapter_family_summary: string
+  chapter_purpose_summary: string
+  chapter_now_summary: string
+
+  // ── Scores and compatibility ──────────────────────────────────────────────────
   compatible_signs: CompatibleSign[]
   career_strengths: string[]
   best_months_love: number[]
   best_months_money: number[]
   daily_score_base: number
   daily_energy_summary: string
+
+  // ── Meta ─────────────────────────────────────────────────────────────────────
+  language?: string   // BCP47 code of the language this reading was generated in
 }
 
 export interface Reading {
@@ -143,4 +180,6 @@ export interface Reading {
   vedic_data: VedicChart | null
   chinese_data: ChineseChart | null
   created_at: string
+  reading_seed: ReadingSeed | null
+  reading_language: string | null
 }
