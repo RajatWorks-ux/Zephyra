@@ -67,7 +67,7 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
 
       console.log('[STORE] Supabase error:', supabaseError?.message || 'none')
       console.log('[STORE] existingReading found:', !!existingReading)
@@ -184,3 +184,4 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
     })
   },
 }))
+
