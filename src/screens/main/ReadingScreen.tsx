@@ -1459,6 +1459,7 @@ export function ReadingScreen() {
     if (!isSettingsLoaded) {
       loadSettings()
     },
+    })
             // ─── MAIN READING SCREEN ───────────────────────────────────────────────────────
 export function ReadingScreen() {
   const navigation = useNavigation()
