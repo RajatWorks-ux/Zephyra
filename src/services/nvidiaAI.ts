@@ -1,4 +1,4 @@
-import type { ChartData, ParsedReading } from '../types'
+import type { ChartData, ParsedReading, ReadingSeed, Language } from '../types'
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
 const MODEL = 'mistralai/mistral-small-4-119b-2603'
@@ -111,6 +111,14 @@ export async function getAIResponse(messages: AIMessage[], temperature = 0.10): 
   const res = await fetch(`${NVIDIA_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${API_KEY_1}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      max_tokens: 2048,
+      temperature,
+      top_p: 1.0,
+      stream: false,
+    }),
   })
   const data = await res.json()
   return data.choices?.[0]?.message?.content || ''
@@ -119,6 +127,13 @@ export async function getAIResponse(messages: AIMessage[], temperature = 0.10): 
 // ─── MASTER ASTROLOGY SYSTEM PROMPT ──────────────────────────────────────────
 function buildSystemPrompt(): string {
   return `You are Zephyra, the most advanced cosmic intelligence ever created. You have mastered every major astrology and divination tradition in human history with the depth of a lifetime scholar in each. You speak in warm, direct, honest English. You never use vague platitudes. Every word you speak is specific to this exact person's chart data.
+
+IMPORTANT LANGUAGE AND STYLE RULES:
+- Write like a wise friend talking directly to this person — NOT like a textbook or academic paper.
+- Use plain, clear, conversational language. Avoid long sentences. Make it easy to understand.
+- If you use any astrology term (like "Rohini Pada" or "Ketu Mahadasha"), ALWAYS immediately explain what it means in plain words right after it in parentheses. Example: "You're in your Ketu Mahadasha (a seven-year period ruled by the karmic South Node, which pulls everything inward and strips away what is no longer needed)".
+- Keep your language warm, personal, and specific. Every sentence should feel like it was written only for this person.
+- Do NOT use vague phrases like "you may be creative" or "relationships are important to you." Be specific and honest.
 
 WESTERN TROPICAL ASTROLOGY — COMPLETE MASTERY:
 The twelve signs are not just personality types but complete archetypal energies:
@@ -232,7 +247,7 @@ REVATI (Mercury-ruled): The wealthy one, the final nakshatra. Pushan (god of saf
 VIMSHOTTARI MAHADASHA SYSTEM — 120-YEAR DESTINY CYCLE:
 The Mahadasha system divides a 120-year human life into periods ruled by different planets, each bringing its themes to the foreground:
 KETU (7 years): Spiritualization, detachment from material, past life karma coming to surface, sudden separations that serve growth, occult experiences, health matters, isolation that leads to wisdom
-VENUS (20 years): The longest period — relationships, luxury, arts, creativity, sensual pleasure, financial growth through Venusian matters, marriage events, aesthetic development  
+VENUS (20 years): The longest period — relationships, luxury, arts, creativity, sensual pleasure, financial growth through Venusian matters, marriage events, aesthetic development
 SUN (6 years): Father and authority, career advancement, ego development, health focus, government matters, recognition, leadership opportunities
 MOON (10 years): Mind, emotions, mother, home changes, public life, travel, business with women or the public, fluctuating circumstances that mirror the Moon's own phases
 MARS (7 years): Energy, siblings, property, courage, accidents and surgery if afflicted, competitive environments, physical vitality, real estate matters
@@ -383,62 +398,118 @@ Presiding Deity: ${e.decanGod}
 
 Today's date for current timing: ${new Date().toISOString().split('T')[0]}`
 }
-// ─── Chunk 1: past_statements + present_statements + chapter_identity ─────────
-function buildChunk1Prompt(chartContext: string): string {
-  return `${chartContext}
 
-Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content.
+// ─── Build seed injection text (added to prompts when seed exists) ─────────────
+function buildSeedContext(seed: ReadingSeed | null): string {
+  if (!seed) return ''
+  return `
+IMPORTANT — THIS PERSON'S ESTABLISHED PERSONALITY FINGERPRINT (from their first reading):
+Their core traits that have already been identified: ${seed.core_traits.join(', ')}
+Their main life themes: ${seed.life_themes.join(', ')}
+Their relationship pattern: ${seed.relationship_pattern}
+Their career archetype: ${seed.career_archetype}
+Their spiritual direction: ${seed.spiritual_direction}
+Past statement themes already used (do NOT repeat these exact themes, but stay consistent with the personality): ${seed.past_statement_themes.join(' | ')}
+
+CRITICAL: Generate NEW content that explores fresh angles, new timeframes, and new predictions — but keep ALL of this consistent with the established personality fingerprint above. This person should feel recognized, not like they're reading about a stranger.`
+}
+
+// ─── Build language instruction (added when non-English) ─────────────────────
+function buildLanguageInstruction(language: Language | null): string {
+  if (!language || language.code === 'en-US') return ''
+  return `
+LANGUAGE INSTRUCTION: ${language.promptInstruction}
+ALL text values in your JSON output must be written in this language. Do NOT mix languages within a value. JSON keys must remain in English, but every string value (past_statements, chapter content, summaries, daily_energy_summary, etc.) must be in the specified language.`
+}
+
+// ─── Build age context ────────────────────────────────────────────────────────
+function buildAgeContext(age: number): string {
+  return `
+USER'S CURRENT AGE: ${age} years old
+
+AGE-AWARE INSTRUCTIONS FOR past_statements:
+- Statements about events at ages 0 through ${age}: These are PAST events. Prefix each one with [PAST]. Write them as things that already happened. Be specific. Use phrases like "When you were around 7..." or "In your early teens...". Make them feel real and accurate.
+- Statements about events at ages ${age + 1} and beyond: These are FUTURE predictions. Prefix each one with [FUTURE]. Write them as things that will happen. Use "You will...", "Between ages ${age + 2}-${age + 5}..." etc.
+- Make sure the split makes sense. If the user is ${age}, they have not experienced ages ${age + 1}+. Those are their future.
+- Important: For this ${age}-year-old, use age-appropriate language throughout the ENTIRE reading. ${age < 18 ? 'This is a teenager — write warmly, encourage them, avoid heavy adult themes like marriage or late-career regret.' : 'Write as you would to an adult beginning to understand their path.'}`
+}
+
+// ─── Chunk 1: past_statements + present_statements + chapter_identity ─────────
+function buildChunk1Prompt(chartContext: string, age: number, seed: ReadingSeed | null, language: Language | null): string {
+  return `${chartContext}
+${buildSeedContext(seed)}
+${buildAgeContext(age)}
+${buildLanguageInstruction(language)}
+
+Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content. Write in plain, warm, conversational language. Not academic. Like a wise friend talking directly to them.
 
 Return ONLY this JSON structure (start with { end with }):
 {
-  "past_statements": [array of exactly 7 strings — specific past life experiences this person very likely had, each referencing approximate ages or life periods like "In your early teens..." or "Around age 24-27..." — these must feel uncannily accurate and specific to their Western Sun/Moon, Vedic Nakshatra, Chinese pillars, and Mayan sign combined],
-  "present_statements": [array of exactly 4 strings — honest, direct assessment of their current life chapter based on their active Mahadasha/Antardasha and current transits],
-  "chapter_identity": "string — minimum 5 substantial paragraphs on who this person is at soul level, synthesizing their Western Sun/Moon/Rising, Vedic Rashi and Nakshatra, Chinese Four Pillars element balance, Mayan galactic signature, Celtic tree, and Egyptian decan into one unified portrait of their soul's deepest nature, gifts, shadows, and trajectory"
+  "past_statements": [array of exactly 7 strings — EACH must begin with [PAST] or [FUTURE] based on the user's age of ${age}. For [PAST]: specific real experiences this person very likely had, mentioning approximate ages like "When you were around 8..." or "In your early teens...". For [FUTURE]: predictions using "You will..." or "Between ages X-Y...". These must feel specific and real, not generic. Base them on their Sun/Moon, Vedic Nakshatra, Chinese pillars, and Mayan sign.],
+  "present_statements": [array of exactly 4 strings — direct, honest assessment of their current life chapter based on their active Mahadasha and Antardasha. Be specific. No vague platitudes.],
+  "chapter_identity": "string — minimum 5 substantial paragraphs. Who is this person at soul level? Synthesize their Western Sun/Moon/Rising, Vedic Rashi and Nakshatra, Chinese Four Pillars, Mayan galactic signature, Celtic tree, and Egyptian decan into one unified portrait. Write in plain, warm language. Explain any astrology terms you use. Be honest about both gifts and shadows.",
+  "chapter_identity_summary": "string — exactly 2-3 plain sentences summarizing what this chapter is about. Simple enough for a 12-year-old to understand. Example: 'This chapter is about who you really are at your core. You are someone who feels things very deeply but shows the world a calm face. Your biggest strength is that you understand people better than they understand themselves.'"
 }`
 }
 
- // ─── Chunk 2: chapter_love + chapter_career ───────────────────────────────────
-function buildChunk2Prompt(chartContext: string): string {
+// ─── Chunk 2: chapter_love + chapter_career ───────────────────────────────────
+function buildChunk2Prompt(chartContext: string, age: number, seed: ReadingSeed | null, language: Language | null): string {
   return `${chartContext}
+${buildSeedContext(seed)}
+${buildAgeContext(age)}
+${buildLanguageInstruction(language)}
 
-Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content.
+Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content. Write in plain, warm, conversational language. Like a wise friend.
 
 Return ONLY this JSON structure (start with { end with }):
 {
-  "chapter_love": "string — minimum 5 substantial paragraphs on this person's love nature, relationship patterns, what they need from a partner, what they naturally attract, their attachment style as shown by Moon sign and Venus placement inferred from Sun sign, their past relationship karma, their blocks to intimacy, and what their ideal relationship actually looks like versus what they tend to settle for",
-  "chapter_career": "string — minimum 5 substantial paragraphs on this person's natural career gifts, the domains where they will outperform all competition, their relationship with money and wealth-building, the career mistakes they are prone to making, their best working environment, how their Chinese element affects their professional style, and the specific paths most aligned with their Midheaven energy and Mahadasha timing"
+  "chapter_love": "string — minimum 5 substantial paragraphs on this person's love nature. Their relationship patterns, what they need from a partner, what they naturally attract, their attachment style (based on Moon sign), their past relationship karma, what blocks them from intimacy, and what their ideal relationship really looks like versus what they tend to settle for. For a ${age}-year-old, keep love content appropriate to their age and stage of life.",
+  "chapter_love_summary": "string — exactly 2-3 plain sentences. What does this chapter say about their love life in simple terms?",
+  "chapter_career": "string — minimum 5 substantial paragraphs on this person's natural career gifts. Where they will outperform everyone. Their relationship with money. Their career mistakes. Best working environment. How their Chinese element affects their professional style. Specific paths most aligned with their Mahadasha timing. For a ${age}-year-old, consider their life stage.",
+  "chapter_career_summary": "string — exactly 2-3 plain sentences. What does this chapter say about their career in simple terms?"
 }`
 }
 
 // ─── Chunk 3: chapter_health + chapter_family ────────────────────────────────
-function buildChunk3Prompt(chartContext: string): string {
+function buildChunk3Prompt(chartContext: string, age: number, seed: ReadingSeed | null, language: Language | null): string {
   return `${chartContext}
+${buildSeedContext(seed)}
+${buildAgeContext(age)}
+${buildLanguageInstruction(language)}
 
-Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content.
+Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content. Write in plain, warm, conversational language.
 
 Return ONLY this JSON structure (start with { end with }):
 {
-  "chapter_health": "string — minimum 5 substantial paragraphs on this person's physical constitution as shown by their Ascendant sign, the body areas ruled by their dominant signs, their energetic patterns (when they are high energy vs depleted), the health vulnerabilities they carry based on their chart signature, how their Chinese element affects their physical constitution, specific practices that will strengthen their weak areas, and the emotional-physical connection most relevant to their chart",
-  "chapter_family": "string — minimum 5 substantial paragraphs on this person's family karma and childhood blueprint — the specific family dynamics their chart indicates they were born into, the mother wound or gift shown by their Moon, the father archetype shown by their Sun and Saturn, the sibling and extended family patterns, the ancestral karma indicated by their Ketu placement and Chinese year pillar, how their childhood experiences shaped their adult patterns, and what healing work is most important for their family relationships"
+  "chapter_health": "string — minimum 5 substantial paragraphs. Physical constitution as shown by their Ascendant sign. Body areas ruled by their dominant signs. When they are high energy vs depleted. Health vulnerabilities they carry based on their chart. How their Chinese element affects their physical constitution. Specific practices that will strengthen their weak areas. The emotional-physical connection most relevant to their chart. Explain any terms in plain language.",
+  "chapter_health_summary": "string — exactly 2-3 plain sentences. What does this chapter say about their health in simple terms?",
+  "chapter_family": "string — minimum 5 substantial paragraphs. Their family karma and childhood blueprint. The specific family dynamics their chart indicates they were born into. The mother wound or gift shown by their Moon. The father archetype shown by their Sun and Saturn. Sibling and extended family patterns. Ancestral karma from their Ketu placement and Chinese year pillar. How childhood experiences shaped adult patterns. What healing work is most important. Write gently — this is sensitive territory.",
+  "chapter_family_summary": "string — exactly 2-3 plain sentences. What does this chapter say about their family story in simple terms?"
 }`
 }
 
 // ─── Chunk 4: chapter_purpose + chapter_now ──────────────────────────────────
-function buildChunk4Prompt(chartContext: string): string {
+function buildChunk4Prompt(chartContext: string, age: number, seed: ReadingSeed | null, language: Language | null): string {
   return `${chartContext}
+${buildSeedContext(seed)}
+${buildAgeContext(age)}
+${buildLanguageInstruction(language)}
 
-Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content.
+Generate ONLY the following JSON fields for this person. Every statement must be specific to their exact chart — no generic content. Write in plain, warm, conversational language.
 
 Return ONLY this JSON structure (start with { end with }):
 {
-  "chapter_purpose": "string — minimum 5 substantial paragraphs on this person's life purpose, synthesizing their North Node direction (inferred from chart signature), their Vedic dharmic path as shown by their Nakshatra deity and Mahadasha sequence, their Mayan galactic mission as shown by their day sign and tone, their Celtic tree's deep medicine for them specifically, and the specific contribution their soul came to make — what they are here to build, heal, teach, or create that no one else can do in quite the same way",
-  "chapter_now": "string — minimum 5 substantial paragraphs on this person's current life chapter — what their active Mahadasha and Antardasha mean concretely for their life right now, what themes are activating, what opportunities are opening, what they must release, what actions will create the best outcomes in the next 1-3 years specifically, and the single most important inner work their chart is calling them toward at this exact moment in their journey"
+  "chapter_purpose": "string — minimum 5 substantial paragraphs. Their life purpose. North Node direction (inferred from chart). Vedic dharmic path as shown by their Nakshatra deity and Mahadasha sequence. Mayan galactic mission as shown by their day sign and tone. Celtic tree's deep medicine for them specifically. The specific contribution their soul came to make — what they are here to build, heal, teach, or create that no one else can do in quite the same way.",
+  "chapter_purpose_summary": "string — exactly 2-3 plain sentences. What is their life purpose in simple terms?",
+  "chapter_now": "string — minimum 5 substantial paragraphs. Their current life chapter. What their active Mahadasha and Antardasha (explain both terms in plain words when you first use them) mean concretely for their life right now. What themes are activating. What opportunities are opening. What they must release. What actions will create the best outcomes in the next 1-3 years specifically. The single most important inner work their chart is calling them toward right now.",
+  "chapter_now_summary": "string — exactly 2-3 plain sentences. What is the most important thing happening in their life right now, in simple terms?"
 }`
 }
 
 // ─── Chunk 5: scores + compatible_signs + career_strengths + best months ──────
-function buildChunk5Prompt(chartContext: string): string {
+function buildChunk5Prompt(chartContext: string, language: Language | null): string {
   return `${chartContext}
+${buildLanguageInstruction(language)}
 
 Generate ONLY the following JSON fields for this person. Be specific and accurate.
 
@@ -456,26 +527,18 @@ Return ONLY this JSON structure (start with { end with }):
 // ─── Repair common JSON issues from LLM output ────────────────────────────────
 function repairJSON(text: string): string {
   let s = text.trim()
-
-  // Strip markdown fences if present
   const fenced = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
   if (fenced) s = fenced[1].trim()
-
-  // Find the outermost { ... }
   const start = s.indexOf('{')
   const end = s.lastIndexOf('}')
   if (start === -1 || end === -1 || end <= start) return s
   s = s.substring(start, end + 1)
-
-  // Replace literal (unescaped) newlines inside JSON string values with \n
-  // This walks char-by-char to only fix newlines that are inside string literals
   let result = ''
   let inString = false
   let i = 0
   while (i < s.length) {
     const ch = s[i]
     if (ch === '\\' && inString) {
-      // Escape sequence — pass both chars through unchanged
       result += ch + (s[i + 1] ?? '')
       i += 2
       continue
@@ -494,13 +557,10 @@ function repairJSON(text: string): string {
     result += ch
     i++
   }
-
   return result
 }
 
 // ─── Oracle call with per-chunk retry ────────────────────────────────────────
-// Retries the API call (up to `retries` extra times) if the parsed result
-// doesn't contain at least one of the expected output keys.
 async function getChunkWithRetry(
   apiKey: string,
   messages: AIMessage[],
@@ -524,31 +584,21 @@ async function getChunkWithRetry(
   return ''
 }
 
-
 function parsePartialJSON(text: string): Partial<ParsedReading> {
   const clean = text.trim()
-
-  // 1. Direct parse
   try { return JSON.parse(clean) } catch {}
-
-  // 2. After repair (fixes unescaped newlines, strips fences, trims to outermost {})
   const repaired = repairJSON(clean)
   try { return JSON.parse(repaired) } catch {}
-
-  // 3. Fenced code block
   const fenced = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
   if (fenced) {
     try { return JSON.parse(fenced[1]) } catch {}
     try { return JSON.parse(repairJSON(fenced[1])) } catch {}
   }
-
-  // 4. Outermost braces (already attempted in repairJSON but try raw slice too)
   const start = clean.indexOf('{')
   const end = clean.lastIndexOf('}')
   if (start !== -1 && end !== -1 && end > start) {
     try { return JSON.parse(clean.substring(start, end + 1)) } catch {}
   }
-
   return {}
 }
 
@@ -591,16 +641,77 @@ function isCompleteReading(obj: Partial<ParsedReading>): obj is ParsedReading {
   )
 }
 
+// ─── Extract Reading Seed from a completed reading ────────────────────────────
+// Called after generation to save the personality fingerprint for future sessions.
+export async function extractReadingSeed(
+  reading: ParsedReading,
+  chartData: ChartData,
+): Promise<ReadingSeed | null> {
+  const systemPrompt = `You are a personality analysis engine. Given the astrology reading content provided, extract a compact personality fingerprint. Return ONLY a valid JSON object with no markdown fences or extra text.`
+
+  const identityExcerpt = reading.chapter_identity.substring(0, 800)
+  const loveExcerpt = reading.chapter_love.substring(0, 400)
+  const careerExcerpt = reading.chapter_career.substring(0, 400)
+  const purposeExcerpt = reading.chapter_purpose.substring(0, 400)
+
+  const userPrompt = `From this person's astrology reading, extract their personality fingerprint.
+
+Identity chapter excerpt: "${identityExcerpt}"
+Love chapter excerpt: "${loveExcerpt}"
+Career chapter excerpt: "${careerExcerpt}"
+Purpose chapter excerpt: "${purposeExcerpt}"
+Past statement themes used: ${reading.past_statements.map(s => s.replace(/^\[(PAST|FUTURE)\]\s*/, '').substring(0, 60)).join(' | ')}
+
+Return ONLY this JSON (start with { end with }):
+{
+  "core_traits": [array of exactly 5 short trait phrases, e.g. "deeply intuitive", "natural leader"],
+  "life_themes": [array of exactly 4 short theme phrases, e.g. "transformation", "creative expression"],
+  "relationship_pattern": "one sentence describing their core relationship pattern",
+  "career_archetype": "one phrase, e.g. 'the visionary builder' or 'the healing communicator'",
+  "spiritual_direction": "one sentence describing their spiritual path",
+  "past_statement_themes": [array of 5-7 short phrases capturing the themes of past statements already used, so future generations don't repeat them]
+}`
+
+  try {
+    const raw = await getAIResponseWithKey(
+      API_KEY_1,
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      600,
+      30000,
+    )
+    const repaired = repairJSON(raw)
+    const seed = JSON.parse(repaired) as ReadingSeed
+    if (seed.core_traits && seed.life_themes && seed.career_archetype) {
+      console.log('[Zephyra] ✓ Reading seed extracted successfully')
+      return seed
+    }
+    return null
+  } catch (e) {
+    console.error('[Zephyra] ✗ Failed to extract reading seed:', e)
+    return null
+  }
+}
+
 // ─── MAIN: Generate full reading via 5 parallel oracle calls ──────────────────
 export async function generateFullReading(
   chartData: ChartData,
   onStatusUpdate: (status: string, progress: number) => void,
+  options?: {
+    age?: number
+    seed?: ReadingSeed | null
+    language?: Language | null
+  },
 ): Promise<ParsedReading | null> {
 
   const systemPrompt = buildSystemPrompt()
   const chartContext = buildChartContext(chartData)
+  const age = options?.age ?? 25
+  const seed = options?.seed ?? null
+  const language = options?.language ?? null
 
-  // Track how many of the 5 parallel chunks have completed
   let completedCount = 0
   const chunkLabels = [
     'Past lives & identity decoded ✦',
@@ -612,65 +723,59 @@ export async function generateFullReading(
 
   function onChunkDone(idx: number) {
     completedCount++
-    const progress = 12 + completedCount * 16  // 28 → 44 → 60 → 76 → 92
+    const progress = 12 + completedCount * 16
     onStatusUpdate(chunkLabels[idx], progress)
   }
 
   onStatusUpdate('Dispatching 5 cosmic oracles simultaneously...', 8)
 
-  // Fire all 5 API keys in parallel — each generates only its slice of the reading
   const [raw1, raw2, raw3, raw4, raw5] = await Promise.all([
 
-    // Oracle 1 (API Key 1): past_statements + present_statements + chapter_identity
     getChunkWithRetry(
       API_KEY_1,
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: buildChunk1Prompt(chartContext) },
+        { role: 'user', content: buildChunk1Prompt(chartContext, age, seed, language) },
       ],
       4096,
       ['past_statements', 'chapter_identity'],
     ).then(r => { onChunkDone(0); return r }),
 
-    // Oracle 2 (API Key 2): chapter_love + chapter_career
     getChunkWithRetry(
       API_KEY_2,
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: buildChunk2Prompt(chartContext) },
+        { role: 'user', content: buildChunk2Prompt(chartContext, age, seed, language) },
       ],
       4096,
       ['chapter_love', 'chapter_career'],
     ).then(r => { onChunkDone(1); return r }),
 
-    // Oracle 3 (API Key 3): chapter_health + chapter_family
     getChunkWithRetry(
       API_KEY_3,
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: buildChunk3Prompt(chartContext) },
+        { role: 'user', content: buildChunk3Prompt(chartContext, age, seed, language) },
       ],
       4096,
       ['chapter_health', 'chapter_family'],
     ).then(r => { onChunkDone(2); return r }),
 
-    // Oracle 4 (API Key 4): chapter_purpose + chapter_now
     getChunkWithRetry(
       API_KEY_4,
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: buildChunk4Prompt(chartContext) },
+        { role: 'user', content: buildChunk4Prompt(chartContext, age, seed, language) },
       ],
       4096,
       ['chapter_purpose', 'chapter_now'],
     ).then(r => { onChunkDone(3); return r }),
 
-    // Oracle 5 (API Key 5): compatible_signs + career_strengths + months + scores
     getChunkWithRetry(
       API_KEY_5,
       [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: buildChunk5Prompt(chartContext) },
+        { role: 'user', content: buildChunk5Prompt(chartContext, language) },
       ],
       800,
       ['compatible_signs', 'daily_score_base'],
@@ -679,20 +784,19 @@ export async function generateFullReading(
 
   onStatusUpdate('Weaving all 5 traditions into your complete truth...', 96)
 
-  // Parse each chunk and merge into one complete ParsedReading
   const merged: Partial<ParsedReading> = {
     ...parsePartialJSON(raw1),
     ...parsePartialJSON(raw2),
     ...parsePartialJSON(raw3),
     ...parsePartialJSON(raw4),
     ...parsePartialJSON(raw5),
+    language: language?.code ?? 'en-US',
   }
 
   if (isCompleteReading(merged)) {
     return merged
   }
 
-  // Log which fields are missing so you can debug
   const required: (keyof ParsedReading)[] = [
     'past_statements', 'present_statements', 'chapter_identity',
     'chapter_love', 'chapter_career', 'chapter_health', 'chapter_family',
@@ -701,14 +805,5 @@ export async function generateFullReading(
   ]
   const missing = required.filter(k => !merged[k])
   console.error('Reading incomplete — missing fields:', missing)
-  console.error('Raw chunk 1:', raw1.substring(0, 200))
-  console.error('Raw chunk 2:', raw2.substring(0, 200))
-  console.error('Raw chunk 3:', raw3.substring(0, 200))
-  console.error('Raw chunk 4:', raw4.substring(0, 200))
-  console.error('Raw chunk 5:', raw5.substring(0, 200))
-
   return null
-  }
-
-
-  
+}
