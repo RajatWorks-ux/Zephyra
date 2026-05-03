@@ -1458,7 +1458,6 @@ export function ReadingScreen() {
   useEffect(() => {
     if (!isSettingsLoaded) {
       loadSettings()
-    },
     })
             // ─── MAIN READING SCREEN ───────────────────────────────────────────────────────
 export function ReadingScreen() {
