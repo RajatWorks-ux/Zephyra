@@ -3,23 +3,14 @@ import { createClient } from '@supabase/supabase-js'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { AppState } from 'react-native'
 import * as Crypto from 'expo-crypto'
+import type { ReadingSeed } from '../types'
 
 // ─── WebCrypto polyfill for Expo Go ───────────────────────────────────────────
-// Expo Go does not expose the WebCrypto API that Supabase's PKCE flow needs
-// in order to generate SHA-256 code challenges and random state values.
-// Without this polyfill the client silently falls back to "plain" PKCE,
-// causing email verification deep-links to fail on redirect.
-// expo-crypto provides the required subtle.digest AND getRandomValues methods.
-// ──────────────────────────────────────────────────────────────────────────────
 if (typeof global.crypto === 'undefined') {
   // @ts-ignore
   global.crypto = {}
 }
 
-// ── getRandomValues — required by Supabase PKCE state generation ──────────────
-// expo-crypto's getRandomBytes fills a Uint8Array with cryptographically
-// secure random bytes, matching the Web Crypto API contract exactly.
-// ──────────────────────────────────────────────────────────────────────────────
 if (typeof global.crypto.getRandomValues === 'undefined') {
   // @ts-ignore
   global.crypto.getRandomValues = (array: Uint8Array) => {
@@ -29,10 +20,6 @@ if (typeof global.crypto.getRandomValues === 'undefined') {
   }
 }
 
-// ── subtle.digest — required by Supabase PKCE code-challenge generation ────────
-// Used to hash the PKCE code verifier with SHA-256 before sending it to
-// Supabase during email-link token exchange.
-// ──────────────────────────────────────────────────────────────────────────────
 if (typeof global.crypto.subtle === 'undefined') {
   // @ts-ignore
   global.crypto.subtle = {
@@ -42,7 +29,6 @@ if (typeof global.crypto.subtle === 'undefined') {
         String.fromCharCode(...new Uint8Array(data)),
         { encoding: Crypto.CryptoEncoding.BASE64 }
       )
-      // Convert base64 to ArrayBuffer
       const binary = atob(base64)
       const buffer = new Uint8Array(binary.length)
       for (let i = 0; i < binary.length; i++) {
@@ -52,7 +38,6 @@ if (typeof global.crypto.subtle === 'undefined') {
     },
   }
 }
-// ──────────────────────────────────────────────────────────────────────────────
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
@@ -67,7 +52,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
-// Refresh token when app comes to foreground
 AppState.addEventListener('change', (state) => {
   if (state === 'active') {
     supabase.auth.startAutoRefresh()
@@ -76,7 +60,6 @@ AppState.addEventListener('change', (state) => {
   }
 })
 
-// Helper: get current user profile
 export async function getUserProfile(userId: string) {
   const { data, error } = await supabase
     .from('profiles')
@@ -86,7 +69,6 @@ export async function getUserProfile(userId: string) {
   return { data, error }
 }
 
-// Helper: check if user has birth profile
 export async function getBirthProfile(userId: string) {
   const { data, error } = await supabase
     .from('birth_profiles')
@@ -96,7 +78,6 @@ export async function getBirthProfile(userId: string) {
   return { data, error }
 }
 
-// Helper: save birth profile
 export async function saveBirthProfile(
   userId: string,
   birthData: {
@@ -116,4 +97,52 @@ export async function saveBirthProfile(
     .select()
     .single()
   return { data, error }
+}
+
+// ─── Get cached reading for a user (returns seed too) ────────────────────────
+export async function getCachedReading(userId: string) {
+  const { data, error } = await supabase
+    .from('readings')
+    .select('id, full_reading_text, reading_seed, reading_language, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return { data, error }
+}
+
+// ─── Save reading with seed and language ─────────────────────────────────────
+export async function saveReading(
+  userId: string,
+  payload: {
+    full_reading_text: string
+    past_statements: string[]
+    western_data: object
+    vedic_data: object
+    chinese_data: object
+    mayan_data: object
+    all_systems_data: object
+    reading_seed?: ReadingSeed | null
+    reading_language?: string
+  }
+) {
+  const { data, error } = await supabase
+    .from('readings')
+    .upsert({
+      user_id: userId,
+      ...payload,
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .single()
+  return { data, error }
+}
+
+// ─── Update reading seed after extraction ────────────────────────────────────
+export async function updateReadingSeed(userId: string, seed: ReadingSeed) {
+  const { error } = await supabase
+    .from('readings')
+    .update({ reading_seed: seed })
+    .eq('user_id', userId)
+  return { error }
 }
