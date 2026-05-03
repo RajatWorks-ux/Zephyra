@@ -397,7 +397,7 @@ Return ONLY this JSON structure (start with { end with }):
 }`
 }
 
-// ─── Chunk 2: chapter_love + chapter_career ───────────────────────────────────
+ // ─── Chunk 2: chapter_love + chapter_career ───────────────────────────────────
 function buildChunk2Prompt(chartContext: string): string {
   return `${chartContext}
 
@@ -453,25 +453,103 @@ Return ONLY this JSON structure (start with { end with }):
 }`
 }
 
-// ─── Parse partial JSON safely ────────────────────────────────────────────────
+// ─── Repair common JSON issues from LLM output ────────────────────────────────
+function repairJSON(text: string): string {
+  let s = text.trim()
+
+  // Strip markdown fences if present
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+  if (fenced) s = fenced[1].trim()
+
+  // Find the outermost { ... }
+  const start = s.indexOf('{')
+  const end = s.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) return s
+  s = s.substring(start, end + 1)
+
+  // Replace literal (unescaped) newlines inside JSON string values with \n
+  // This walks char-by-char to only fix newlines that are inside string literals
+  let result = ''
+  let inString = false
+  let i = 0
+  while (i < s.length) {
+    const ch = s[i]
+    if (ch === '\\' && inString) {
+      // Escape sequence — pass both chars through unchanged
+      result += ch + (s[i + 1] ?? '')
+      i += 2
+      continue
+    }
+    if (ch === '"') {
+      inString = !inString
+      result += ch
+      i++
+      continue
+    }
+    if (inString && (ch === '\n' || ch === '\r')) {
+      result += '\\n'
+      i++
+      continue
+    }
+    result += ch
+    i++
+  }
+
+  return result
+}
+
+// ─── Oracle call with per-chunk retry ────────────────────────────────────────
+// Retries the API call (up to `retries` extra times) if the parsed result
+// doesn't contain at least one of the expected output keys.
+async function getChunkWithRetry(
+  apiKey: string,
+  messages: AIMessage[],
+  maxTokens: number,
+  expectedKeys: string[],
+  retries: number = 2,
+  timeoutMs: number = 240000,
+): Promise<string> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const raw = await getAIResponseWithKey(apiKey, messages, maxTokens, timeoutMs)
+    const parsed = parsePartialJSON(raw)
+    const hasKeys = expectedKeys.some(k => !!(parsed as Record<string, unknown>)[k])
+    if (hasKeys) return raw
+    if (attempt < retries) {
+      console.warn(
+        `[Zephyra] ⚠ Chunk missing [${expectedKeys.join(', ')}] — retrying (attempt ${attempt + 1}/${retries})...`
+      )
+    }
+  }
+  console.error(`[Zephyra] ✗ Chunk failed after ${retries} retries — expected keys: [${expectedKeys.join(', ')}]`)
+  return ''
+}
+
+
 function parsePartialJSON(text: string): Partial<ParsedReading> {
   const clean = text.trim()
-  try {
-    return JSON.parse(clean)
-  } catch {
-    // Try fenced
-    const fenced = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-    if (fenced) {
-      try { return JSON.parse(fenced[1]) } catch {}
-    }
-    // Try outermost braces
-    const start = clean.indexOf('{')
-    const end = clean.lastIndexOf('}')
-    if (start !== -1 && end !== -1 && end > start) {
-      try { return JSON.parse(clean.substring(start, end + 1)) } catch {}
-    }
-    return {}
+
+  // 1. Direct parse
+  try { return JSON.parse(clean) } catch {}
+
+  // 2. After repair (fixes unescaped newlines, strips fences, trims to outermost {})
+  const repaired = repairJSON(clean)
+  try { return JSON.parse(repaired) } catch {}
+
+  // 3. Fenced code block
+  const fenced = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+  if (fenced) {
+    try { return JSON.parse(fenced[1]) } catch {}
+    try { return JSON.parse(repairJSON(fenced[1])) } catch {}
   }
+
+  // 4. Outermost braces (already attempted in repairJSON but try raw slice too)
+  const start = clean.indexOf('{')
+  const end = clean.lastIndexOf('}')
+  if (start !== -1 && end !== -1 && end > start) {
+    try { return JSON.parse(clean.substring(start, end + 1)) } catch {}
+  }
+
+  return {}
 }
 
 // ─── Parse AI response safely (full reading — used by readingStore) ───────────
@@ -544,58 +622,58 @@ export async function generateFullReading(
   const [raw1, raw2, raw3, raw4, raw5] = await Promise.all([
 
     // Oracle 1 (API Key 1): past_statements + present_statements + chapter_identity
-    getAIResponseWithKey(
+    getChunkWithRetry(
       API_KEY_1,
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: buildChunk1Prompt(chartContext) },
       ],
       4096,
-      240000
+      ['past_statements', 'chapter_identity'],
     ).then(r => { onChunkDone(0); return r }),
 
     // Oracle 2 (API Key 2): chapter_love + chapter_career
-    getAIResponseWithKey(
+    getChunkWithRetry(
       API_KEY_2,
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: buildChunk2Prompt(chartContext) },
       ],
       4096,
-      240000
+      ['chapter_love', 'chapter_career'],
     ).then(r => { onChunkDone(1); return r }),
 
     // Oracle 3 (API Key 3): chapter_health + chapter_family
-    getAIResponseWithKey(
+    getChunkWithRetry(
       API_KEY_3,
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: buildChunk3Prompt(chartContext) },
       ],
       4096,
-      240000
+      ['chapter_health', 'chapter_family'],
     ).then(r => { onChunkDone(2); return r }),
 
     // Oracle 4 (API Key 4): chapter_purpose + chapter_now
-    getAIResponseWithKey(
+    getChunkWithRetry(
       API_KEY_4,
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: buildChunk4Prompt(chartContext) },
       ],
       4096,
-      240000
+      ['chapter_purpose', 'chapter_now'],
     ).then(r => { onChunkDone(3); return r }),
 
     // Oracle 5 (API Key 5): compatible_signs + career_strengths + months + scores
-    getAIResponseWithKey(
+    getChunkWithRetry(
       API_KEY_5,
       [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: buildChunk5Prompt(chartContext) },
       ],
       800,
-      240000
+      ['compatible_signs', 'daily_score_base'],
     ).then(r => { onChunkDone(4); return r }),
   ])
 
@@ -631,5 +709,6 @@ export async function generateFullReading(
 
   return null
   }
+
 
   
