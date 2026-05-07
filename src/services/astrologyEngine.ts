@@ -1,6 +1,6 @@
-import type { ChartData, WesternChart, VedicChart, ChineseChart, MayanChart, CelticChart, EgyptianChart, BirthProfile } from '../types'
+import type { ChartData, VedicChart, VedicGraha, BirthProfile } from '../types'
 
-// ─── Math helpers ─────────────────────────────────────────────────────────────
+// ─── Math helpers ──────────────────────────────────────────────────────────────
 function toRad(deg: number): number { return (deg * Math.PI) / 180 }
 function toDeg(rad: number): number { return (rad * 180) / Math.PI }
 function norm(deg: number): number { return ((deg % 360) + 360) % 360 }
@@ -15,10 +15,9 @@ function julianDay(year: number, month: number, day: number, utcHour: number = 1
   return jdn - 0.5 + utcHour / 24
 }
 
-// T = Julian centuries from J2000.0
 function julianT(jd: number): number { return (jd - 2451545.0) / 36525 }
 
-// ─── Sun Longitude (accurate to ~1 degree) ────────────────────────────────────
+// ─── Tropical Longitudes (accurate ~0.5-2 degrees) ────────────────────────────
 function sunLongitude(jd: number): number {
   const T = julianT(jd)
   const L0 = norm(280.46646 + 36000.76983 * T + 0.0003032 * T * T)
@@ -30,7 +29,6 @@ function sunLongitude(jd: number): number {
   return norm(L0 + C)
 }
 
-// ─── Moon Longitude (accurate to ~2 degrees) ──────────────────────────────────
 function moonLongitude(jd: number): number {
   const T = julianT(jd)
   const L = norm(218.3165 + 481267.8813 * T)
@@ -38,7 +36,7 @@ function moonLongitude(jd: number): number {
   const M = norm(357.5291 + 35999.0503 * T)
   const Mm = norm(134.9634 + 477198.8676 * T)
   const F = norm(93.2721 + 483202.0175 * T)
-  const lon = L
+  return norm(L
     + 6.2888 * Math.sin(toRad(Mm))
     - 1.2742 * Math.sin(toRad(2 * D - Mm))
     + 0.6583 * Math.sin(toRad(2 * D))
@@ -46,12 +44,56 @@ function moonLongitude(jd: number): number {
     - 0.1851 * Math.sin(toRad(M))
     - 0.1143 * Math.sin(toRad(2 * F))
     + 0.0588 * Math.sin(toRad(2 * Mm - 2 * D))
-    + 0.0572 * Math.sin(toRad(2 * Mm + 2 * D - M))
-    - 0.0538 * Math.sin(toRad(2 * D - M))
-  return norm(lon)
+    - 0.0538 * Math.sin(toRad(2 * D - M)))
 }
 
-// ─── Ascendant (Rising Sign) ──────────────────────────────────────────────────
+function marsLongitude(jd: number): number {
+  const T = julianT(jd)
+  const L = norm(355.433 + 19140.2993 * T + 0.000261 * T * T)
+  const M = norm(19.3730 + 19139.8585 * T)
+  const Mrad = toRad(M)
+  return norm(L + 10.691 * Math.sin(Mrad) + 0.623 * Math.sin(2 * Mrad))
+}
+
+function mercuryLongitude(jd: number): number {
+  const T = julianT(jd)
+  const L = norm(252.2509 + 149472.6749 * T)
+  const M = norm(174.7948 + 149472.5153 * T)
+  const Mrad = toRad(M)
+  return norm(L + 23.4400 * Math.sin(Mrad) + 2.9818 * Math.sin(2 * Mrad))
+}
+
+function jupiterLongitude(jd: number): number {
+  const T = julianT(jd)
+  const L = norm(34.3515 + 3034.9057 * T + 0.000080 * T * T)
+  const M = norm(20.9 + 3034.906 * T)
+  const Mrad = toRad(M)
+  return norm(L + 5.5549 * Math.sin(Mrad) + 0.1683 * Math.sin(2 * Mrad))
+}
+
+function venusLongitude(jd: number): number {
+  const T = julianT(jd)
+  const L = norm(181.9798 + 58517.8157 * T)
+  const M = norm(212.2606 + 58517.8036 * T)
+  const Mrad = toRad(M)
+  return norm(L + 0.7758 * Math.sin(Mrad) + 0.0033 * Math.sin(2 * Mrad))
+}
+
+function saturnLongitude(jd: number): number {
+  const T = julianT(jd)
+  const L = norm(50.0787 + 1222.1138 * T + 0.000029 * T * T)
+  const M = norm(317.020 + 1221.552 * T)
+  const Mrad = toRad(M)
+  return norm(L + 6.3585 * Math.sin(Mrad) + 0.2204 * Math.sin(2 * Mrad))
+}
+
+// Rahu = Mean North Node (retrograde)
+function rahuLongitude(jd: number): number {
+  const T = julianT(jd)
+  return norm(125.0445 - 1934.1362 * T + 0.0020768 * T * T)
+}
+
+// ─── Ascendant ────────────────────────────────────────────────────────────────
 function ascendant(jd: number, lat: number, lng: number): number {
   const T = julianT(jd)
   const GMST = norm(280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T)
@@ -66,15 +108,22 @@ function ascendant(jd: number, lat: number, lng: number): number {
   return asc
 }
 
-// ─── Sign from longitude ──────────────────────────────────────────────────────
-const ZODIAC = ['Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
-  'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces']
+// ─── Vedic Rashi Names ────────────────────────────────────────────────────────
+const RASHIS = [
+  'Mesha', 'Vrishabha', 'Mithuna', 'Karka',
+  'Simha', 'Kanya', 'Tula', 'Vrishchika',
+  'Dhanu', 'Makara', 'Kumbha', 'Meena',
+]
 
-function getSign(lon: number): string { return ZODIAC[Math.floor(lon / 30) % 12] }
+function getRashi(siderealLon: number): string {
+  return RASHIS[Math.floor(siderealLon / 30) % 12]
+}
 
-function getDegreeInSign(lon: number): number { return Math.round((lon % 30) * 10) / 10 }
+function getDegreeInSign(lon: number): number {
+  return Math.round((lon % 30) * 10) / 10
+}
 
-// ─── Vedic (Sidereal) — Lahiri Ayanamsa ──────────────────────────────────────
+// ─── Vedic Ayanamsa (Lahiri) ──────────────────────────────────────────────────
 function sidereal(tropicalLon: number, year: number): number {
   const ayanamsa = 23.85 + (year - 2000) * 0.014
   return norm(tropicalLon - ayanamsa)
@@ -83,47 +132,47 @@ function sidereal(tropicalLon: number, year: number): number {
 // ─── 27 Nakshatras ────────────────────────────────────────────────────────────
 const NAKSHATRAS = [
   { name: 'Ashwini', lord: 'Ketu' },
-  { name: 'Bharani', lord: 'Venus' },
-  { name: 'Krittika', lord: 'Sun' },
-  { name: 'Rohini', lord: 'Moon' },
-  { name: 'Mrigashira', lord: 'Mars' },
+  { name: 'Bharani', lord: 'Shukra' },
+  { name: 'Krittika', lord: 'Surya' },
+  { name: 'Rohini', lord: 'Chandra' },
+  { name: 'Mrigashira', lord: 'Mangal' },
   { name: 'Ardra', lord: 'Rahu' },
-  { name: 'Punarvasu', lord: 'Jupiter' },
-  { name: 'Pushya', lord: 'Saturn' },
-  { name: 'Ashlesha', lord: 'Mercury' },
+  { name: 'Punarvasu', lord: 'Guru' },
+  { name: 'Pushya', lord: 'Shani' },
+  { name: 'Ashlesha', lord: 'Budh' },
   { name: 'Magha', lord: 'Ketu' },
-  { name: 'Purva Phalguni', lord: 'Venus' },
-  { name: 'Uttara Phalguni', lord: 'Sun' },
-  { name: 'Hasta', lord: 'Moon' },
-  { name: 'Chitra', lord: 'Mars' },
+  { name: 'Purva Phalguni', lord: 'Shukra' },
+  { name: 'Uttara Phalguni', lord: 'Surya' },
+  { name: 'Hasta', lord: 'Chandra' },
+  { name: 'Chitra', lord: 'Mangal' },
   { name: 'Swati', lord: 'Rahu' },
-  { name: 'Vishakha', lord: 'Jupiter' },
-  { name: 'Anuradha', lord: 'Saturn' },
-  { name: 'Jyeshtha', lord: 'Mercury' },
+  { name: 'Vishakha', lord: 'Guru' },
+  { name: 'Anuradha', lord: 'Shani' },
+  { name: 'Jyeshtha', lord: 'Budh' },
   { name: 'Mula', lord: 'Ketu' },
-  { name: 'Purva Ashadha', lord: 'Venus' },
-  { name: 'Uttara Ashadha', lord: 'Sun' },
-  { name: 'Shravana', lord: 'Moon' },
-  { name: 'Dhanishta', lord: 'Mars' },
+  { name: 'Purva Ashadha', lord: 'Shukra' },
+  { name: 'Uttara Ashadha', lord: 'Surya' },
+  { name: 'Shravana', lord: 'Chandra' },
+  { name: 'Dhanishta', lord: 'Mangal' },
   { name: 'Shatabhisha', lord: 'Rahu' },
-  { name: 'Purva Bhadrapada', lord: 'Jupiter' },
-  { name: 'Uttara Bhadrapada', lord: 'Saturn' },
-  { name: 'Revati', lord: 'Mercury' },
+  { name: 'Purva Bhadrapada', lord: 'Guru' },
+  { name: 'Uttara Bhadrapada', lord: 'Shani' },
+  { name: 'Revati', lord: 'Budh' },
 ]
 
-function getNakshatra(siderealMoon: number): { name: string; pada: number; lord: string } {
+function getNakshatra(siderealLon: number): { name: string; pada: number; lord: string } {
   const span = 360 / 27
-  const idx = Math.floor(siderealMoon / span) % 27
-  const pada = Math.floor((siderealMoon % span) / (span / 4)) + 1
+  const idx = Math.floor(siderealLon / span) % 27
+  const pada = Math.floor((siderealLon % span) / (span / 4)) + 1
   return { name: NAKSHATRAS[idx].name, pada, lord: NAKSHATRAS[idx].lord }
 }
 
-// ─── Vimshottari Mahadasha ────────────────────────────────────────────────────
+// ─── Vimshottari Dasha ────────────────────────────────────────────────────────
 const DASHA_YEARS: Record<string, number> = {
-  Ketu: 7, Venus: 20, Sun: 6, Moon: 10, Mars: 7,
-  Rahu: 18, Jupiter: 16, Saturn: 19, Mercury: 17,
+  Ketu: 7, Shukra: 20, Surya: 6, Chandra: 10, Mangal: 7,
+  Rahu: 18, Guru: 16, Shani: 19, Budh: 17,
 }
-const DASHA_ORDER = ['Ketu', 'Venus', 'Sun', 'Moon', 'Mars', 'Rahu', 'Jupiter', 'Saturn', 'Mercury']
+const DASHA_ORDER = ['Ketu', 'Shukra', 'Surya', 'Chandra', 'Mangal', 'Rahu', 'Guru', 'Shani', 'Budh']
 
 function getMahadasha(nakshatraLord: string, birthYear: number): { mahadasha: string; period: string; antardasha: string } {
   const currentYear = new Date().getFullYear()
@@ -143,8 +192,6 @@ function getMahadasha(nakshatraLord: string, birthYear: number): { mahadasha: st
   const lord = DASHA_ORDER[idx]
   const startYear = birthYear + dashaStartAge
   const endYear = startYear + DASHA_YEARS[lord]
-
-  // Sub-period (Antardasha) — simplified: same lord
   const antardasha = DASHA_ORDER[(idx + 1) % 9]
 
   return {
@@ -154,174 +201,122 @@ function getMahadasha(nakshatraLord: string, birthYear: number): { mahadasha: st
   }
 }
 
-// ─── Chinese BaZi Four Pillars ────────────────────────────────────────────────
-const STEMS = [
-  'Jia (Wood+)', 'Yi (Wood-)', 'Bing (Fire+)', 'Ding (Fire-)', 'Wu (Earth+)',
-  'Ji (Earth-)', 'Geng (Metal+)', 'Xin (Metal-)', 'Ren (Water+)', 'Gui (Water-)',
-]
-const BRANCHES = [
-  'Zi (Rat)', 'Chou (Ox)', 'Yin (Tiger)', 'Mao (Rabbit)', 'Chen (Dragon)',
-  'Si (Snake)', 'Wu (Horse)', 'Wei (Goat)', 'Shen (Monkey)', 'You (Rooster)',
-  'Xu (Dog)', 'Hai (Pig)',
-]
-const ANIMALS = ['Rat', 'Ox', 'Tiger', 'Rabbit', 'Dragon', 'Snake', 'Horse', 'Goat', 'Monkey', 'Rooster', 'Dog', 'Pig']
-const STEM_ELEMENT = ['Wood', 'Wood', 'Fire', 'Fire', 'Earth', 'Earth', 'Metal', 'Metal', 'Water', 'Water']
-const STEM_POLARITY = ['Yang', 'Yin', 'Yang', 'Yin', 'Yang', 'Yin', 'Yang', 'Yin', 'Yang', 'Yin']
+// ─── Exaltation / Debilitation ────────────────────────────────────────────────
+// [exaltation rashi index, debilitation rashi index]
+const GRAHA_DIGNITY: Record<string, [number, number]> = {
+  Surya:   [0, 6],   // Mesha exalted, Tula debilitated
+  Chandra: [1, 7],   // Vrishabha exalted, Vrishchika debilitated
+  Mangal:  [9, 3],   // Makara exalted, Karka debilitated
+  Budh:    [5, 11],  // Kanya exalted, Meena debilitated
+  Guru:    [3, 9],   // Karka exalted, Makara debilitated
+  Shukra:  [11, 5],  // Meena exalted, Kanya debilitated
+  Shani:   [6, 0],   // Tula exalted, Mesha debilitated
+  Rahu:    [2, 8],   // Mithuna exalted, Dhanu debilitated
+  Ketu:    [8, 2],   // Dhanu exalted, Mithuna debilitated
+}
 
-function getChinesePillars(year: number, month: number, day: number, hour: number, jd: number): ChineseChart {
-  // Year pillar (Chinese year starts ~Feb 4)
-  const adjYear = (month < 2 || (month === 2 && day < 4)) ? year - 1 : year
-  const yStem = ((adjYear - 4) % 10 + 10) % 10
-  const yBranch = ((adjYear - 4) % 12 + 12) % 12
-
-  // Month pillar
-  const solarMonth = (month - 1 + (day < 6 ? -1 : 0) + 12) % 12
-  const mStem = ((adjYear % 5) * 2 + solarMonth) % 10
-  const mBranch = (solarMonth + 2) % 12
-
-  // Day pillar — reference Jan 1.5 2000 (JD 2451545) = Geng(6) Chen(4)
-  const daysDiff = Math.floor(jd - 2451545)
-  const dStem = ((6 + daysDiff) % 10 + 10) % 10
-  const dBranch = ((4 + daysDiff) % 12 + 12) % 12
-
-  // Hour pillar
-  const hBranch = Math.floor(((hour + 1) % 24) / 2) % 12
-  const hStem = (dStem % 5 * 2 + hBranch) % 10
-
+function checkDignity(grahaName: string, rashiIdx: number): { isExalted: boolean; isDebilitated: boolean } {
+  const dignity = GRAHA_DIGNITY[grahaName]
+  if (!dignity) return { isExalted: false, isDebilitated: false }
   return {
-    animal: ANIMALS[yBranch],
-    yearStem: STEMS[yStem],
-    yearBranch: BRANCHES[yBranch],
-    element: STEM_ELEMENT[yStem],
-    polarity: STEM_POLARITY[yStem],
-    dayStem: STEMS[dStem],
-    dayBranch: BRANCHES[dBranch],
-    hourBranch: BRANCHES[hBranch],
-    yearPillar: { stem: STEMS[yStem], branch: BRANCHES[yBranch], element: STEM_ELEMENT[yStem] },
-    monthPillar: { stem: STEMS[mStem], branch: BRANCHES[mBranch], element: STEM_ELEMENT[mStem] },
-    dayPillar: { stem: STEMS[dStem], branch: BRANCHES[dBranch], element: STEM_ELEMENT[dStem] },
-    hourPillar: { stem: STEMS[hStem], branch: BRANCHES[hBranch], element: STEM_ELEMENT[hStem] },
+    isExalted: rashiIdx === dignity[0],
+    isDebilitated: rashiIdx === dignity[1],
   }
 }
 
-// ─── Mayan Tzolkin ────────────────────────────────────────────────────────────
-const MAYAN_SIGNS = [
-  'Imix (Dragon)', 'Ik (Wind)', 'Akbal (Night)', 'Kan (Seed)', 'Chicchan (Serpent)',
-  'Cimi (Death)', 'Manik (Deer)', 'Lamat (Star)', 'Muluc (Moon)', 'Oc (Dog)',
-  'Chuen (Monkey)', 'Eb (Road)', 'Ben (Reed)', 'Ix (Jaguar)', 'Men (Eagle)',
-  'Cib (Wisdom)', 'Caban (Earth)', 'Etznab (Mirror)', 'Cauac (Storm)', 'Ahau (Sun)',
-]
-const TONE_WORDS = [
-  '', 'Unity', 'Duality', 'Activation', 'Stability', 'Radiance',
-  'Equality', 'Attunement', 'Harmony', 'Intention', 'Manifestation',
-  'Liberation', 'Cooperation', 'Transcendence',
-]
+// ─── Basic Yoga Detection ─────────────────────────────────────────────────────
+function detectYogas(grahas: VedicGraha[], lagnaIdx: number): string[] {
+  const yogas: string[] = []
 
-function getMayanTzolkin(jd: number): MayanChart {
-  const GMT = 584283
-  const kin = ((Math.floor(jd) - GMT) % 260 + 260) % 260
-  const signIdx = kin % 20
-  const tone = (kin % 13) + 1
-  return {
-    daySign: MAYAN_SIGNS[signIdx],
-    tone,
-    toneKeyword: TONE_WORDS[tone],
-    galacticSignature: `Tone ${tone} · ${MAYAN_SIGNS[signIdx]}`,
+  const sun = grahas.find(g => g.name === 'Surya')
+  const moon = grahas.find(g => g.name === 'Chandra')
+  const mars = grahas.find(g => g.name === 'Mangal')
+  const mercury = grahas.find(g => g.name === 'Budh')
+  const jupiter = grahas.find(g => g.name === 'Guru')
+  const venus = grahas.find(g => g.name === 'Shukra')
+  const saturn = grahas.find(g => g.name === 'Shani')
+  const rahu = grahas.find(g => g.name === 'Rahu')
+  const ketu = grahas.find(g => g.name === 'Ketu')
+
+  // Gajakesari Yoga: Jupiter in kendra (1,4,7,10) from Moon
+  if (jupiter && moon) {
+    const diff = Math.abs(jupiter.house - moon.house)
+    const kendraFromMoon = [0, 3, 6, 9]
+    const adjustedDiff = diff > 6 ? 12 - diff : diff
+    if (kendraFromMoon.includes(adjustedDiff)) {
+      yogas.push('Gajakesari Yoga (Guru in kendra from Chandra — prosperity, intelligence, good name)')
+    }
   }
-}
 
-// ─── Celtic Tree Calendar ─────────────────────────────────────────────────────
-interface CelticEntry { name: string; keyword: string; m1: number; d1: number; m2: number; d2: number }
-const CELTIC: CelticEntry[] = [
-  { name: 'Silver Fir', keyword: 'Clarity and vision', m1: 12, d1: 24, m2: 1, d2: 20 },
-  { name: 'Rowan', keyword: 'Protection and quickening', m1: 1, d1: 21, m2: 2, d2: 17 },
-  { name: 'Ash', keyword: 'Adaptability and connection', m1: 2, d1: 18, m2: 3, d2: 17 },
-  { name: 'Alder', keyword: 'Foundation and courage', m1: 3, d1: 18, m2: 4, d2: 14 },
-  { name: 'Willow', keyword: 'Healing and intuition', m1: 4, d1: 15, m2: 5, d2: 12 },
-  { name: 'Hawthorn', keyword: 'Patience and transformation', m1: 5, d1: 13, m2: 6, d2: 9 },
-  { name: 'Oak', keyword: 'Strength and endurance', m1: 6, d1: 10, m2: 7, d2: 7 },
-  { name: 'Holly', keyword: 'Balance and power', m1: 7, d1: 8, m2: 8, d2: 4 },
-  { name: 'Hazel', keyword: 'Wisdom and creativity', m1: 8, d1: 5, m2: 9, d2: 1 },
-  { name: 'Vine', keyword: 'Harmony and prophecy', m1: 9, d1: 2, m2: 9, d2: 29 },
-  { name: 'Ivy', keyword: 'Resilience and tenacity', m1: 9, d1: 30, m2: 10, d2: 27 },
-  { name: 'Reed', keyword: 'Purpose and directness', m1: 10, d1: 28, m2: 11, d2: 24 },
-  { name: 'Elder', keyword: 'Renewal and endings', m1: 11, d1: 25, m2: 12, d2: 23 },
-]
+  // Budhaditya Yoga: Sun + Mercury in same house
+  if (sun && mercury && sun.house === mercury.house) {
+    yogas.push('Budhaditya Yoga (Surya + Budh conjunction — sharp intellect, communication gifts)')
+  }
 
-function getCelticTree(month: number, day: number): CelticChart {
-  for (const t of CELTIC) {
-    // Handle Silver Fir spanning Dec-Jan
-    if (t.name === 'Silver Fir') {
-      if ((month === 12 && day >= 24) || (month === 1 && day <= 20)) {
-        return { treeName: t.name, oghamSymbol: 'Ailm', treeMeaning: t.keyword }
+  // Chandra-Mangal Yoga: Moon + Mars together
+  if (moon && mars && moon.house === mars.house) {
+    yogas.push('Chandra-Mangal Yoga (Chandra + Mangal — financial drive, emotional intensity)')
+  }
+
+  // Neecha Bhanga Raja Yoga: debilitated planet cancelled by lord
+  grahas.forEach(g => {
+    if (g.isDebilitated) {
+      yogas.push(`Neecha Bhanga possibility for ${g.name} — debilitation may be cancelled, creating strength through struggle`)
+    }
+  })
+
+  // Panch Mahapurusha Yoga: Mars/Mercury/Jupiter/Venus/Saturn in own sign or exalted in kendra
+  const kendras = [1, 4, 7, 10]
+  const panch: VedicGraha[] = [mars, mercury, jupiter, venus, saturn].filter(Boolean) as VedicGraha[]
+  panch.forEach(g => {
+    if (kendras.includes(g.house) && (g.isExalted)) {
+      const yogaNames: Record<string, string> = {
+        Mangal: 'Ruchaka Yoga (exalted Mangal in kendra — courage, leadership, land)',
+        Budh: 'Bhadra Yoga (exalted Budh in kendra — intellect, business, speech)',
+        Guru: 'Hamsa Yoga (exalted Guru in kendra — wisdom, dharma, prosperity)',
+        Shukra: 'Malavya Yoga (exalted Shukra in kendra — beauty, luxury, love)',
+        Shani: 'Sasa Yoga (exalted Shani in kendra — discipline, authority, longevity)',
       }
-      continue
+      if (yogaNames[g.name]) yogas.push(yogaNames[g.name])
     }
-    const inRange =
-      (month > t.m1 || (month === t.m1 && day >= t.d1)) &&
-      (month < t.m2 || (month === t.m2 && day <= t.d2))
-    if (inRange) {
-      return { treeName: t.name, oghamSymbol: t.name.substring(0, 3).toUpperCase(), treeMeaning: t.keyword }
+  })
+
+  // Kemadruma Yoga: Moon has no planets in 2nd or 12th house from it
+  if (moon) {
+    const secondFromMoon = ((moon.house + 1 - 1) % 12) + 1
+    const twelfthFromMoon = ((moon.house - 2 + 12) % 12) + 1
+    const hasNeighbors = grahas.some(g =>
+      g.name !== 'Chandra' && (g.house === secondFromMoon || g.house === twelfthFromMoon)
+    )
+    if (!hasNeighbors) {
+      yogas.push('Kemadruma Yoga (Chandra isolated — emotional sensitivity, self-reliance needed)')
     }
   }
-  return { treeName: 'Elder', oghamSymbol: 'RUIS', treeMeaning: 'Renewal and endings' }
+
+  return yogas
 }
 
-// ─── Egyptian Decans ──────────────────────────────────────────────────────────
-const DECAN_GODS = [
-  'Amon-Ra', 'Amun', 'Amun-Khepri',
-  'Satis', 'Anat', 'Ament',
-  'Ba', 'Khnum', 'Sothis',
-  'Osiris', 'Apis', 'Hathor',
-  'Horus', 'Thoth', 'Wadjet',
-  'Neith', 'Nekhbet', 'Atum',
-  'Ra', 'Tefnut', 'Geb',
-  'Nut', 'Shu', 'Set',
-  'Nephthys', 'Khepri', 'Anubis',
-  'Maat', 'Ptah', 'Imhotep',
-  'Nefertem', 'Sekhmet', 'Bast',
-  'Sobek', 'Min', 'Montu',
-]
-
-function getEgyptianDecan(sunLon: number): EgyptianChart {
-  const decanNum = Math.floor(sunLon / 10) % 36
-  const signIdx = Math.floor(decanNum / 3)
-  const decanInSign = (decanNum % 3) + 1
-  const ordinals = ['First', 'Second', 'Third']
-  return {
-    decanName: `${ordinals[decanInSign - 1]} Decan of ${ZODIAC[signIdx]}`,
-    decanGod: DECAN_GODS[decanNum],
-    decanNumber: decanNum + 1,
-    sunDecan: ZODIAC[signIdx],
-  }
-}
-
-// ─── Daily Cosmic Score ───────────────────────────────────────────────────────
+// ─── Daily Score (Vedic-based) ────────────────────────────────────────────────
 export function getDailyScore(chartData: ChartData): number {
   const today = new Date()
   const jdToday = julianDay(today.getFullYear(), today.getMonth() + 1, today.getDate(), 12)
-
-  // Moon phase age (days since last new moon)
-  const knownNewMoon = julianDay(2025, 1, 29, 12) // Jan 29 2025 new moon
+  const knownNewMoon = julianDay(2025, 1, 29, 12)
   const lunarCycle = 29.53
   const moonAge = ((jdToday - knownNewMoon) % lunarCycle + lunarCycle) % lunarCycle
   const moonScore = moonAge < 14.5
     ? (moonAge / 14.5) * 25
     : ((lunarCycle - moonAge) / (lunarCycle - 14.5)) * 25
 
-  // Harmonic based on birth sun sign + day of year
-  const sunSignIdx = ZODIAC.indexOf(chartData.western.sunSign)
+  const lagnaIdx = RASHIS.indexOf(chartData.vedic.lagna)
+  const moonRashiIdx = RASHIS.indexOf(chartData.vedic.moonRashi)
+  const base = 50 + ((lagnaIdx + moonRashiIdx) % 8)
   const dayOfYear = Math.floor((today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / 86400000)
-  const harmonic = Math.sin(toRad((dayOfYear + sunSignIdx * 30) * 2.5)) * 15
-
-  // Base from birth chart
-  const moonSignIdx = ZODIAC.indexOf(chartData.western.moonSign)
-  const base = 52 + ((sunSignIdx + moonSignIdx) % 8)
+  const harmonic = Math.sin((dayOfYear + lagnaIdx * 30) * 0.0436) * 15
 
   return Math.max(22, Math.min(94, Math.round(base + moonScore + harmonic)))
 }
 
-// ─── MAIN EXPORT ─────────────────────────────────────────────────────────────
+// ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
 export function calculateChartData(birthProfile: BirthProfile): ChartData {
   const [yearStr, monthStr, dayStr] = birthProfile.birth_date.split('-')
   const year = parseInt(yearStr)
@@ -332,46 +327,111 @@ export function calculateChartData(birthProfile: BirthProfile): ChartData {
   if (birthProfile.birth_time_known && birthProfile.birth_time) {
     const [hStr, mStr] = birthProfile.birth_time.split(':')
     const localHour = parseInt(hStr) + parseInt(mStr) / 60
-    // Approximate UTC from longitude (15° per hour)
     utcHour = localHour - birthProfile.birth_lng / 15
   }
 
   const jd = julianDay(year, month, day, utcHour)
 
-  const sunLon = sunLongitude(jd)
-  const moonLon = moonLongitude(jd)
-  const ascLon = birthProfile.birth_time_known
+  // Tropical longitudes
+  const sunTrop = sunLongitude(jd)
+  const moonTrop = moonLongitude(jd)
+  const marsTrop = marsLongitude(jd)
+  const mercTrop = mercuryLongitude(jd)
+  const jupTrop = jupiterLongitude(jd)
+  const venTrop = venusLongitude(jd)
+  const satTrop = saturnLongitude(jd)
+  const rahuTrop = rahuLongitude(jd)
+  const ketuTrop = norm(rahuTrop + 180)
+
+  const ascTrop = birthProfile.birth_time_known
     ? ascendant(jd, birthProfile.birth_lat, birthProfile.birth_lng)
-    : sunLon // fallback if time unknown
+    : sunTrop
 
-  const siderealMoon = sidereal(moonLon, year)
-  const nakshatraData = getNakshatra(siderealMoon)
-  const dashaData = getMahadasha(nakshatraData.lord, year)
+  // Sidereal (Vedic) conversions
+  const sid = (lon: number) => sidereal(lon, year)
 
-  const western: WesternChart = {
-    sunSign: getSign(sunLon),
-    sunDegree: getDegreeInSign(sunLon),
-    moonSign: getSign(moonLon),
-    moonDegree: getDegreeInSign(moonLon),
-    ascendant: birthProfile.birth_time_known ? getSign(ascLon) : 'Unknown',
-    ascendantDegree: getDegreeInSign(ascLon),
+  const sunSid = sid(sunTrop)
+  const moonSid = sid(moonTrop)
+  const marsSid = sid(marsTrop)
+  const mercSid = sid(mercTrop)
+  const jupSid = sid(jupTrop)
+  const venSid = sid(venTrop)
+  const satSid = sid(satTrop)
+  const rahuSid = sid(rahuTrop)
+  const ketuSid = sid(ketuTrop)
+  const ascSid = sid(ascTrop)
+
+  // Lagna (1st house starts here)
+  const lagnaIdx = Math.floor(ascSid / 30) % 12
+
+  // Determine house for a planet (equal house from lagna)
+  function getHouse(siderealLon: number): number {
+    const distFromLagna = norm(siderealLon - ascSid)
+    return Math.floor(distFromLagna / 30) % 12 + 1
   }
 
+  // Houses array: houses[0] = 1st house rashi, houses[1] = 2nd house rashi, etc.
+  const houses = Array.from({ length: 12 }, (_, i) => RASHIS[(lagnaIdx + i) % 12])
+
+  // Nakshatra for Moon
+  const moonNak = getNakshatra(moonSid)
+  const dashaData = getMahadasha(moonNak.lord, year)
+
+  // Build Grahas
+  const rawGrahas = [
+    { name: 'Surya', sid: sunSid },
+    { name: 'Chandra', sid: moonSid },
+    { name: 'Mangal', sid: marsSid },
+    { name: 'Budh', sid: mercSid },
+    { name: 'Guru', sid: jupSid },
+    { name: 'Shukra', sid: venSid },
+    { name: 'Shani', sid: satSid },
+    { name: 'Rahu', sid: rahuSid },
+    { name: 'Ketu', sid: ketuSid },
+  ]
+
+  const grahas: VedicGraha[] = rawGrahas.map(({ name, sid: grahaLon }) => {
+    const rashiIdx = Math.floor(grahaLon / 30) % 12
+    const nak = getNakshatra(grahaLon)
+    const dignity = checkDignity(name, rashiIdx)
+    // Simple retrograde: Mars/Mercury/Jupiter/Venus/Saturn can be retrograde
+    // We'll approximate: if planet's daily motion is < 0 (simplified check)
+    const isRetrograde = ['Budh', 'Shukra', 'Mangal', 'Guru', 'Shani', 'Rahu', 'Ketu'].includes(name)
+      ? Math.sin(toRad(grahaLon - sunSid)) < -0.1
+      : false
+
+    return {
+      name,
+      rashi: RASHIS[rashiIdx],
+      degree: getDegreeInSign(grahaLon),
+      house: getHouse(grahaLon),
+      nakshatra: nak.name,
+      nakshatraPada: nak.pada,
+      isRetrograde,
+      isExalted: dignity.isExalted,
+      isDebilitated: dignity.isDebilitated,
+    }
+  })
+
+  const yogas = detectYogas(grahas, lagnaIdx)
+
   const vedic: VedicChart = {
-    rashi: getSign(sidereal(sunLon, year)),
-    moonRashi: getSign(siderealMoon),
-    lagna: birthProfile.birth_time_known ? getSign(sidereal(ascLon, year)) : 'Unknown',
-    nakshatra: nakshatraData.name,
-    nakshatraPada: nakshatraData.pada,
+    lagna: RASHIS[lagnaIdx],
+    lagnaDegree: getDegreeInSign(ascSid),
+    rashi: getRashi(sunSid),
+    rashiDegree: getDegreeInSign(sunSid),
+    moonRashi: getRashi(moonSid),
+    moonDegree: getDegreeInSign(moonSid),
+    nakshatra: moonNak.name,
+    nakshatraPada: moonNak.pada,
+    nakshatraLord: moonNak.lord,
     mahadasha: dashaData.mahadasha,
     mahadashaPeriod: dashaData.period,
     antardasha: dashaData.antardasha,
+    grahas,
+    houses,
+    yogas,
   }
 
-  const chinese = getChinesePillars(year, month, day, Math.round(utcHour + birthProfile.birth_lng / 15), jd)
-  const mayan = getMayanTzolkin(jd)
-  const celtic = getCelticTree(month, day)
-  const egyptian = getEgyptianDecan(sunLon)
-
-  return { western, vedic, chinese, mayan, celtic, egyptian, birthProfile, calculatedAt: new Date().toISOString() }
+  return { vedic, birthProfile, calculatedAt: new Date().toISOString() }
   }
