@@ -45,78 +45,66 @@ export interface CityResult {
 
 export type AuthScreen = 'signin' | 'signup'
 
-export interface WesternChart {
-  sunSign: string
-  sunDegree: number
-  moonSign: string
-  moonDegree: number
-  ascendant: string
-  ascendantDegree: number
+// ─── Vedic Graha (Planet) ─────────────────────────────────────────────────────
+export interface VedicGraha {
+  name: string        // 'Surya', 'Chandra', 'Mangal', etc.
+  rashi: string       // Sign: 'Mesha', 'Vrishabha', etc.
+  degree: number      // Degree within sign (0-29.99)
+  house: number       // 1-12
+  nakshatra: string   // Nakshatra name
+  nakshatraPada: number // 1-4
+  isRetrograde: boolean
+  isExalted: boolean
+  isDebilitated: boolean
 }
 
+// ─── Vedic Chart ─────────────────────────────────────────────────────────────
 export interface VedicChart {
-  rashi: string
+  // Lagna (Ascendant)
+  lagna: string           // e.g. 'Mesha'
+  lagnaDegree: number
+
+  // Sun (Surya)
+  rashi: string           // Sun's Rashi
+  rashiDegree: number
+
+  // Moon (Chandra)
   moonRashi: string
-  lagna: string
+  moonDegree: number
+
+  // Nakshatra
   nakshatra: string
   nakshatraPada: number
+  nakshatraLord: string
+
+  // Dasha
   mahadasha: string
   mahadashaPeriod: string
   antardasha: string
+
+  // All 9 Grahas
+  grahas: VedicGraha[]
+
+  // Houses — which Rashi is in which house
+  houses: string[]   // index 0 = 1st house Rashi, index 11 = 12th house
+
+  // Basic Yogas detected
+  yogas: string[]
 }
 
-export interface ChineseChart {
-  animal: string
-  yearStem: string
-  yearBranch: string
-  element: string
-  polarity: string
-  dayStem: string
-  dayBranch: string
-  hourBranch: string
-  yearPillar: { stem: string; branch: string; element: string }
-  monthPillar: { stem: string; branch: string; element: string }
-  dayPillar: { stem: string; branch: string; element: string }
-  hourPillar: { stem: string; branch: string; element: string }
-}
-
-export interface MayanChart {
-  daySign: string
-  tone: number
-  toneKeyword: string
-  galacticSignature: string
-}
-
-export interface CelticChart {
-  treeName: string
-  oghamSymbol: string
-  treeMeaning: string
-}
-
-export interface EgyptianChart {
-  decanName: string
-  decanGod: string
-  decanNumber: number
-  sunDecan: string
-}
-
+// ─── Chart Data (Vedic only now) ─────────────────────────────────────────────
 export interface ChartData {
-  western: WesternChart
   vedic: VedicChart
-  chinese: ChineseChart
-  mayan: MayanChart
-  celtic: CelticChart
-  egyptian: EgyptianChart
   birthProfile: BirthProfile
   calculatedAt: string
 }
 
 export interface CompatibleSign {
-  sign: string
+  sign: string       // Will now be Vedic Rashi names
   percentage: number
 }
 
-// ─── Reading Seed — stable personality fingerprint saved after first generation ─
+// ─── Reading Seed ─────────────────────────────────────────────────────────────
 export interface ReadingSeed {
   core_traits: string[]
   life_themes: string[]
@@ -126,22 +114,20 @@ export interface ReadingSeed {
   past_statement_themes: string[]
 }
 
-// ─── Language — for multilingual reading generation ───────────────────────────
+// ─── Language ────────────────────────────────────────────────────────────────
 export interface Language {
-  code: string          // BCP47 code e.g. 'en-US', 'hi-IN'
-  name: string          // English display name e.g. 'Hindi'
-  nativeName: string    // Native name e.g. 'हिन्दी'
-  promptInstruction: string // What to tell the AI
-  flag: string          // Emoji flag
+  code: string
+  name: string
+  nativeName: string
+  promptInstruction: string
+  flag: string
 }
 
+// ─── Parsed Reading ───────────────────────────────────────────────────────────
 export interface ParsedReading {
-  // ── Past / Present ──────────────────────────────────────────────────────────
-  // Each string is prefixed with [PAST] or [FUTURE] for age-aware rendering
   past_statements: string[]
   present_statements: string[]
 
-  // ── Chapters — main content ──────────────────────────────────────────────────
   chapter_identity: string
   chapter_love: string
   chapter_career: string
@@ -150,7 +136,6 @@ export interface ParsedReading {
   chapter_purpose: string
   chapter_now: string
 
-  // ── Chapter summaries — 2-3 plain sentences per chapter ──────────────────────
   chapter_identity_summary: string
   chapter_love_summary: string
   chapter_career_summary: string
@@ -159,7 +144,6 @@ export interface ParsedReading {
   chapter_purpose_summary: string
   chapter_now_summary: string
 
-  // ── Scores and compatibility ──────────────────────────────────────────────────
   compatible_signs: CompatibleSign[]
   career_strengths: string[]
   best_months_love: number[]
@@ -167,8 +151,7 @@ export interface ParsedReading {
   daily_score_base: number
   daily_energy_summary: string
 
-  // ── Meta ─────────────────────────────────────────────────────────────────────
-  language?: string   // BCP47 code of the language this reading was generated in
+  language?: string
 }
 
 export interface Reading {
@@ -176,9 +159,7 @@ export interface Reading {
   user_id: string
   full_reading_text: string | null
   past_statements: string[] | null
-  western_data: WesternChart | null
   vedic_data: VedicChart | null
-  chinese_data: ChineseChart | null
   created_at: string
   reading_seed: ReadingSeed | null
   reading_language: string | null
