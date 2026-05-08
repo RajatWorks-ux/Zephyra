@@ -31,6 +31,12 @@ export function LanguagePicker({ visible, onClose, onSelect }: LanguagePickerPro
   const { selectedLanguage } = useSettingsStore()
   const [query, setQuery] = useState('')
 
+  // BUG #9 FIX: reset search query whenever the picker is dismissed (Cancel or backdrop tap)
+  const handleClose = useCallback(() => {
+    setQuery('')
+    onClose()
+  }, [onClose])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return LANGUAGES
@@ -46,13 +52,14 @@ export function LanguagePicker({ visible, onClose, onSelect }: LanguagePickerPro
     (lang: Language) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
       onSelect(lang)
-      onClose()
       setQuery('')
+      onClose()
     },
     [onSelect, onClose]
   )
 
-  function renderItem({ item }: { item: Language }) {
+  // BUG #13 FIX: memoize renderItem to prevent FlatList re-rendering all rows on every keystroke
+  const renderItem = useCallback(({ item }: { item: Language }) => {
     const isSelected = item.code === selectedLanguage.code
     return (
       <TouchableOpacity
@@ -72,18 +79,18 @@ export function LanguagePicker({ visible, onClose, onSelect }: LanguagePickerPro
         )}
       </TouchableOpacity>
     )
-  }
+  }, [selectedLanguage.code, handleSelect])
 
   return (
     <Modal
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
       statusBarTranslucent
     >
       <View style={s.overlay}>
-        <TouchableOpacity style={s.backdrop} onPress={onClose} activeOpacity={1} />
+        <TouchableOpacity style={s.backdrop} onPress={handleClose} activeOpacity={1} />
 
         <View style={s.sheet}>
           <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
@@ -139,7 +146,7 @@ export function LanguagePicker({ visible, onClose, onSelect }: LanguagePickerPro
 
           {/* Close button */}
           <SafeAreaView>
-            <TouchableOpacity style={s.closeBtn} onPress={onClose} activeOpacity={0.8}>
+            <TouchableOpacity style={s.closeBtn} onPress={handleClose} activeOpacity={0.8}>
               <Text style={s.closeBtnText}>Cancel</Text>
             </TouchableOpacity>
           </SafeAreaView>
@@ -306,3 +313,4 @@ const s = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
   },
 })
+  
