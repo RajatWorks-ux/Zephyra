@@ -33,9 +33,11 @@ export function ProfileScreen() {
           <Text style={styles.avatarLetter}>{(profile?.display_name || 'S')[0].toUpperCase()}</Text>
         </View>
         <Text style={styles.name}>{profile?.display_name || 'Seeker'}</Text>
-        {chartData?.western?.sunSign && (
+        {/* chartData.western does NOT exist — ChartData only has .vedic
+            Use the real Vedic fields: rashi (Sun), moonRashi, lagna */}
+        {chartData?.vedic && (
           <Text style={styles.identity}>
-            {chartData.western.sunSign} Sun · {chartData.western.moonSign} Moon · {chartData.western.ascendant} Rising
+            {chartData.vedic.rashi} Sun · {chartData.vedic.moonRashi} Moon · {chartData.vedic.lagna} Lagna
           </Text>
         )}
 
@@ -103,4 +105,5 @@ const styles = StyleSheet.create({
   },
   signOutText: { fontFamily: Fonts.accent, fontSize: 12, color: '#FF4444', letterSpacing: 1 },
 })
+
 
