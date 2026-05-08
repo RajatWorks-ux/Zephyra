@@ -1667,8 +1667,7 @@ export function ReadingScreen() {
           <BlurView intensity={15} tint="dark" style={styles.waitCard}>
             <Text style={styles.waitIcon}>◌</Text>
             <Text style={styles.waitText}>
-              {"Your reading is being generated.
-Return once it completes."}
+              {'Your reading is being generated Return once it completes.'}
             </Text>
           </BlurView>
         )}
