@@ -23,6 +23,7 @@ import {
 } from '@expo-google-fonts/cormorant-garamond'
 import { RootNavigator } from './src/navigation/RootNavigator'
 import { useAuthStore } from './src/store/authStore'
+import { useSettingsStore } from './src/store/settingsStore'
 
 SplashScreen.preventAutoHideAsync()
 
@@ -59,6 +60,9 @@ const linking = {
 
 export default function App() {
   const { initialize } = useAuthStore()
+  // BUG #6 FIX: load persisted language preference at app startup so ALL screens
+  // see the correct language immediately — not lazily when ReadingScreen mounts
+  const { loadSettings } = useSettingsStore()
 
   const [fontsLoaded] = useFonts({
     CinzelDecorative_400Regular,
@@ -71,7 +75,8 @@ export default function App() {
 
   useEffect(() => {
     async function prepare() {
-      await initialize()
+      // Run auth init and settings load in parallel for faster startup
+      await Promise.all([initialize(), loadSettings()])
       if (fontsLoaded) {
         await SplashScreen.hideAsync()
       }
@@ -92,3 +97,4 @@ export default function App() {
     </GestureHandlerRootView>
   )
 }
+
