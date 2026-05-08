@@ -4,7 +4,11 @@ import { create } from 'zustand'
 import { calculateChartData, getDailyScore } from '../services/astrologyEngine'
 import { generateFullReading, parseReadingJSON, extractReadingSeed } from '../services/nvidiaAI'
 import { getCachedReading, saveReading, updateReadingSeed } from '../services/supabase'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { ChartData, ParsedReading, BirthProfile, ReadingSeed, Language } from '../types'
+
+// ─── Local cache keys (fallback when Supabase quota is exceeded) ───────────────
+const localReadingKey = (uid: string) => `@zephyra_reading_v1_${uid}`
 
 // ─── Compute user age from birth_date ─────────────────────────────────────────
 function computeAge(birthDate: string): number {
@@ -104,7 +108,9 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
         console.log('[STORE] parseReadingJSON result:', parsed ? 'VALID' : 'NULL/INVALID')
 
         if (parsed) {
-          console.log('[STORE] Using cached reading — done!')
+          console.log('[STORE] Using Supabase cached reading — done!')
+          // Also mirror to local cache for offline/quota fallback
+          await AsyncStorage.setItem(localReadingKey(userId), existingReading.full_reading_text).catch(() => {})
           set({
             reading: parsed,
             readingSeed: existingReading.reading_seed ?? null,
@@ -115,8 +121,33 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
           })
           return
         } else {
-          console.log('[STORE] Cached reading is invalid — will regenerate')
+          console.log('[STORE] Cached reading is invalid — will try local cache')
         }
+      }
+
+      // ── Step 2b: AsyncStorage fallback (Supabase quota exceeded / offline) ──
+      if (supabaseError || !existingReading) {
+        console.log('[STORE] Supabase unavailable — checking local AsyncStorage cache...')
+        try {
+          const localText = await AsyncStorage.getItem(localReadingKey(userId))
+          if (localText) {
+            const parsed = parseReadingJSON(localText)
+            if (parsed) {
+              console.log('[STORE] Using local cached reading — done!')
+              set({
+                reading: parsed,
+                currentLanguageCode: 'en-US',
+                dailyScore: parsed.daily_score_base ?? astrologyScore,
+                isLoading: false,
+                chaptersDone: 5,
+              })
+              return
+            }
+          }
+        } catch (localErr) {
+          console.warn('[STORE] AsyncStorage read failed:', localErr)
+        }
+        console.log('[STORE] No local cache found — will generate fresh reading')
       }
 
       // ── Step 3: Fire AI oracles ────────────────────────────────────────
@@ -155,8 +186,10 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
       if (parsed) {
         // Save reading to Supabase
         console.log('[STORE] Saving to Supabase...')
+        const readingJson = JSON.stringify(parsed)
+        // Save to Supabase (best-effort — may fail if quota exceeded)
         await saveReading(userId, {
-          full_reading_text: JSON.stringify(parsed),
+          full_reading_text: readingJson,
           past_statements: parsed.past_statements,
           western_data: chartData.western,
           vedic_data: chartData.vedic,
@@ -165,7 +198,9 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
           all_systems_data: { celtic: chartData.celtic, egyptian: chartData.egyptian },
           reading_seed: null, // Seed extracted asynchronously below
           reading_language: 'en-US',
-        })
+        }).catch((e) => console.warn('[STORE] Supabase save failed (non-critical):', e))
+        // Always save locally — works even when Supabase quota is exceeded
+        await AsyncStorage.setItem(localReadingKey(userId), readingJson).catch(() => {})
 
         set({
           reading: parsed,
@@ -319,3 +354,4 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
     })
   },
 }))
+      
