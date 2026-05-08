@@ -150,6 +150,9 @@ export interface ParsedReading {
   best_months_money: number[]
   daily_score_base: number
   daily_energy_summary: string
+  // Optional fields added in v2 — absent in older cached readings, UI falls back to '—'
+  daily_caution?: string
+  peak_hours?: string
 
   language?: string
 }
@@ -164,3 +167,4 @@ export interface Reading {
   reading_seed: ReadingSeed | null
   reading_language: string | null
 }
+
