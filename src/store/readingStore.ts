@@ -291,19 +291,9 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
       )
 
       if (parsed) {
-        // Save translated reading to Supabase (overwrites with new language)
-        await saveReading(userId, {
-          full_reading_text: JSON.stringify(parsed),
-          past_statements: parsed.past_statements,
-          western_data: chartData.western,
-          vedic_data: chartData.vedic,
-          chinese_data: chartData.chinese,
-          mayan_data: chartData.mayan,
-          all_systems_data: { celtic: chartData.celtic, egyptian: chartData.egyptian },
-          reading_seed: readingSeed,
-          reading_language: language.code,
-        })
+        const readingJson = JSON.stringify(parsed)
 
+        // BUG #4 FIX: Update state FIRST so the reading is shown regardless of save outcome
         set({
           reading: parsed,
           currentLanguageCode: language.code,
@@ -315,6 +305,22 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
           generationProgress: 100,
           generationStatus: 'Complete ✦',
         })
+
+        // BUG #4 FIX: always save to local AsyncStorage first (works even when Supabase quota exceeded)
+        await AsyncStorage.setItem(localReadingKey(userId), readingJson).catch(() => {})
+
+        // BUG #7 FIX: wrap Supabase save in .catch() so a quota error doesn't crash the function
+        await saveReading(userId, {
+          full_reading_text: readingJson,
+          past_statements: parsed.past_statements,
+          western_data: chartData.western,
+          vedic_data: chartData.vedic,
+          chinese_data: chartData.chinese,
+          mayan_data: chartData.mayan,
+          all_systems_data: { celtic: chartData.celtic, egyptian: chartData.egyptian },
+          reading_seed: readingSeed,
+          reading_language: language.code,
+        }).catch((e) => console.warn('[STORE] Supabase save failed during regeneration (non-critical):', e))
       } else {
         set({
           isGenerating: false,
@@ -354,4 +360,5 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
     })
   },
 }))
+
       
