@@ -1,5 +1,15 @@
 // src/components/ui/LanguagePicker.tsx
 // Searchable bottom sheet for selecting a reading language.
+//
+// FIXES APPLIED:
+// ── BUG #10 (Android keyboard collapses FlatList):
+//    Added KeyboardAvoidingView wrapping the sheet so when the software keyboard
+//    opens, the sheet resizes rather than the FlatList being squashed to 0px.
+//    Also added minHeight: 150 to the list style so it always occupies space.
+// ── BUG #11 (Android Alert appears behind Modal):
+//    handleSelect now calls onClose() first, then fires onSelect() after a
+//    60 ms delay — giving the Modal time to fully dismiss before Alert.alert()
+//    is called. On iOS the order doesn't matter; the guard is platform-safe.
 
 import React, { useState, useCallback, useMemo } from 'react'
 import {
@@ -13,6 +23,7 @@ import {
   SafeAreaView,
   Platform,
   StatusBar,
+  KeyboardAvoidingView,
 } from 'react-native'
 import { BlurView } from 'expo-blur'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -31,7 +42,7 @@ export function LanguagePicker({ visible, onClose, onSelect }: LanguagePickerPro
   const { selectedLanguage } = useSettingsStore()
   const [query, setQuery] = useState('')
 
-  // BUG #9 FIX: reset search query whenever the picker is dismissed (Cancel or backdrop tap)
+  // Reset search query whenever the picker is dismissed
   const handleClose = useCallback(() => {
     setQuery('')
     onClose()
@@ -48,17 +59,22 @@ export function LanguagePicker({ visible, onClose, onSelect }: LanguagePickerPro
     )
   }, [query])
 
+  // BUG #11 FIX: close the Modal FIRST, then fire onSelect after 60ms so that
+  // on Android the Modal is fully gone before Alert.alert() is called.
+  // Without this, the Alert renders behind the still-visible Modal on Android.
   const handleSelect = useCallback(
     (lang: Language) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
-      onSelect(lang)
       setQuery('')
-      onClose()
+      onClose() // dismiss Modal immediately
+      setTimeout(() => {
+        onSelect(lang) // Alert (if any) fires after Modal is gone
+      }, 60)
     },
     [onSelect, onClose]
   )
 
-  // BUG #13 FIX: memoize renderItem to prevent FlatList re-rendering all rows on every keystroke
+  // Memoize renderItem to prevent FlatList re-rendering all rows on every keystroke
   const renderItem = useCallback(({ item }: { item: Language }) => {
     const isSelected = item.code === selectedLanguage.code
     return (
@@ -89,74 +105,89 @@ export function LanguagePicker({ visible, onClose, onSelect }: LanguagePickerPro
       onRequestClose={handleClose}
       statusBarTranslucent
     >
-      <View style={s.overlay}>
-        <TouchableOpacity style={s.backdrop} onPress={handleClose} activeOpacity={1} />
+      {/* BUG #10 FIX: KeyboardAvoidingView ensures the sheet shrinks upward
+          when the software keyboard opens, rather than the FlatList collapsing
+          to zero height with the Cancel button floating to the top. */}
+      <KeyboardAvoidingView
+        style={s.kavRoot}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={s.overlay}>
+          <TouchableOpacity style={s.backdrop} onPress={handleClose} activeOpacity={1} />
 
-        <View style={s.sheet}>
-          <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
-          <LinearGradient
-            colors={['rgba(13,13,43,0.98)', 'rgba(5,5,15,0.99)']}
-            style={StyleSheet.absoluteFillObject}
-          />
-
-          {/* Handle */}
-          <View style={s.handle} />
-
-          {/* Header */}
-          <View style={s.header}>
-            <Text style={s.title}>🌐 Select Language</Text>
-            <Text style={s.subtitle}>Your reading will be regenerated in the chosen language</Text>
-          </View>
-
-          {/* Search */}
-          <View style={s.searchWrap}>
-            <Text style={s.searchIcon}>⌕</Text>
-            <TextInput
-              style={s.searchInput}
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search languages..."
-              placeholderTextColor="rgba(255,255,255,0.25)"
-              autoCorrect={false}
-              autoCapitalize="none"
-              returnKeyType="search"
+          <View style={s.sheet}>
+            <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
+            <LinearGradient
+              colors={['rgba(13,13,43,0.98)', 'rgba(5,5,15,0.99)']}
+              style={StyleSheet.absoluteFillObject}
             />
-            {query.length > 0 && (
-              <TouchableOpacity onPress={() => setQuery('')} style={s.clearBtn}>
-                <Text style={s.clearText}>✕</Text>
+
+            {/* Handle */}
+            <View style={s.handle} />
+
+            {/* Header */}
+            <View style={s.header}>
+              <Text style={s.title}>🌐 Select Language</Text>
+              <Text style={s.subtitle}>Your reading will be regenerated in the chosen language</Text>
+            </View>
+
+            {/* Search */}
+            <View style={s.searchWrap}>
+              <Text style={s.searchIcon}>⌕</Text>
+              <TextInput
+                style={s.searchInput}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search languages..."
+                placeholderTextColor="rgba(255,255,255,0.25)"
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+              />
+              {query.length > 0 && (
+                <TouchableOpacity onPress={() => setQuery('')} style={s.clearBtn}>
+                  <Text style={s.clearText}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* BUG #10 FIX: minHeight: 150 guarantees the list never collapses
+                to zero even on small screens with the keyboard open. flex: 1
+                still lets it grow to fill available space normally. */}
+            <FlatList
+              data={filtered}
+              keyExtractor={(item) => item.code}
+              renderItem={renderItem}
+              style={s.list}
+              contentContainerStyle={s.listContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <View style={s.empty}>
+                  <Text style={s.emptyText}>No languages found for "{query}"</Text>
+                </View>
+              }
+            />
+
+            {/* Close button */}
+            <SafeAreaView>
+              <TouchableOpacity style={s.closeBtn} onPress={handleClose} activeOpacity={0.8}>
+                <Text style={s.closeBtnText}>Cancel</Text>
               </TouchableOpacity>
-            )}
+            </SafeAreaView>
           </View>
-
-          {/* Language list */}
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.code}
-            renderItem={renderItem}
-            style={s.list}
-            contentContainerStyle={s.listContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={
-              <View style={s.empty}>
-                <Text style={s.emptyText}>No languages found for "{query}"</Text>
-              </View>
-            }
-          />
-
-          {/* Close button */}
-          <SafeAreaView>
-            <TouchableOpacity style={s.closeBtn} onPress={handleClose} activeOpacity={0.8}>
-              <Text style={s.closeBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </SafeAreaView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   )
 }
 
 const s = StyleSheet.create({
+  // BUG #10 FIX: kavRoot fills the whole screen so KeyboardAvoidingView has
+  // a defined height to work from when pushing the sheet upward.
+  kavRoot: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -231,6 +262,8 @@ const s = StyleSheet.create({
   },
   list: {
     flex: 1,
+    // BUG #10 FIX: guarantees the list never collapses to 0 when keyboard opens
+    minHeight: 150,
   },
   listContent: {
     paddingHorizontal: 16,
@@ -313,4 +346,4 @@ const s = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
   },
 })
-  
+
