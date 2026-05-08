@@ -33,7 +33,7 @@ export function ProfileScreen() {
           <Text style={styles.avatarLetter}>{(profile?.display_name || 'S')[0].toUpperCase()}</Text>
         </View>
         <Text style={styles.name}>{profile?.display_name || 'Seeker'}</Text>
-        {chartData && (
+        {chartData?.western?.sunSign && (
           <Text style={styles.identity}>
             {chartData.western.sunSign} Sun · {chartData.western.moonSign} Moon · {chartData.western.ascendant} Rising
           </Text>
@@ -103,3 +103,4 @@ const styles = StyleSheet.create({
   },
   signOutText: { fontFamily: Fonts.accent, fontSize: 12, color: '#FF4444', letterSpacing: 1 },
 })
+
