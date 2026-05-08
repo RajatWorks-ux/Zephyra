@@ -100,10 +100,12 @@ export async function saveBirthProfile(
 }
 
 // ─── Get cached reading for a user (returns seed too) ────────────────────────
+// updated_at is included so the store can determine whether the reading is stale
+// (> 24 hours old) and trigger a silent background refresh if needed.
 export async function getCachedReading(userId: string) {
   const { data, error } = await supabase
     .from('readings')
-    .select('id, full_reading_text, reading_seed, reading_language, created_at')
+    .select('id, full_reading_text, reading_seed, reading_language, created_at, updated_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -145,4 +147,5 @@ export async function updateReadingSeed(userId: string, seed: ReadingSeed) {
     .update({ reading_seed: seed })
     .eq('user_id', userId)
   return { error }
-}
+  }
+
