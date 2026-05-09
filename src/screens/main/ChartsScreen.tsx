@@ -1,28 +1,263 @@
-import React from 'react'
-import { View, Text, StyleSheet } from 'react-native'
+import React, { useState, useRef } from 'react'
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Dimensions, Animated,
+} from 'react-native'
 import { Video, ResizeMode } from 'expo-av'
+import { BlurView } from 'expo-blur'
 import { LinearGradient } from 'expo-linear-gradient'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import * as Haptics from 'expo-haptics'
+import { useReadingStore } from '../../store/readingStore'
 import { Videos } from '../../constants/videos'
 import { Fonts } from '../../constants/fonts'
+import { SouthIndianKundli } from '../../components/charts/SouthIndianKundli'
+import { NakshatraWheel } from '../../components/charts/NakshatraWheel'
+import { GrahaStrength } from '../../components/charts/GrahaStrength'
+import { DashaTimeline } from '../../components/charts/DashaTimeline'
+
+const { width } = Dimensions.get('window')
+
+const TABS = [
+  { id: 'kundali', label: 'Kundali', sub: 'Birth Chart' },
+  { id: 'nakshatra', label: 'Nakshatras', sub: 'Moon Star' },
+  { id: 'grahas', label: 'Grahas', sub: 'Planets' },
+  { id: 'dashas', label: 'Dashas', sub: 'Life Periods' },
+]
 
 export function ChartsScreen() {
+  const { chartData, isLoading, isGenerating } = useReadingStore()
+  const insets = useSafeAreaInsets()
+  const [activeTab, setActiveTab] = useState(0)
+  const slideAnim = useRef(new Animated.Value(0)).current
+
+  function switchTab(idx: number) {
+    if (idx === activeTab) return
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+    const direction = idx > activeTab ? -1 : 1
+    Animated.sequence([
+      Animated.timing(slideAnim, { toValue: direction * 30, duration: 100, useNativeDriver: true }),
+    ]).start(() => {
+      setActiveTab(idx)
+      slideAnim.setValue(-direction * 30)
+      Animated.timing(slideAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start()
+    })
+  }
+
+  const notReady = isLoading || isGenerating || !chartData
+
   return (
     <View style={styles.root}>
-      <Video source={Videos.readingBg} style={StyleSheet.absoluteFillObject} resizeMode={ResizeMode.COVER} isLooping shouldPlay isMuted />
-      <LinearGradient colors={['rgba(5,5,15,0.5)', 'rgba(5,5,15,0.88)']} style={StyleSheet.absoluteFillObject} />
-      <View style={styles.center}>
-        <Text style={styles.symbol}>◎</Text>
-        <Text style={styles.title}>Visual Charts</Text>
-        <Text style={styles.sub}>Your star maps are coming in Phase 3. Western wheel, Vedic square, Chinese pillars, Soul Compass and more.</Text>
+      <Video
+        source={Videos.chartsBg}
+        style={StyleSheet.absoluteFillObject}
+        resizeMode={ResizeMode.COVER}
+        isLooping shouldPlay isMuted
+      />
+      <LinearGradient
+        colors={['rgba(5,5,15,0.4)', 'rgba(5,5,15,0.75)', 'rgba(5,5,15,0.92)']}
+        style={StyleSheet.absoluteFillObject}
+      />
+
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <Text style={styles.pageTitle}>Vedic Charts</Text>
+        <Text style={styles.pageSub}>Jyotish — Science of Light</Text>
       </View>
+
+      {/* Tab bar */}
+      <View style={styles.tabBar}>
+        {TABS.map((tab, i) => {
+          const isActive = i === activeTab
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={[styles.tab, isActive && styles.tabActive]}
+              onPress={() => switchTab(i)}
+              activeOpacity={0.75}
+            >
+              {isActive && (
+                <LinearGradient
+                  colors={['rgba(201,168,76,0.15)', 'transparent']}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              )}
+              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+                {tab.label}
+              </Text>
+              <Text style={styles.tabSub}>{tab.sub}</Text>
+            </TouchableOpacity>
+          )
+        })}
+      </View>
+
+      {/* Chart content */}
+      {notReady ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingSymbol}>☽</Text>
+          <Text style={styles.loadingText}>
+            {isLoading || isGenerating
+              ? 'Calculating your Vedic chart...'
+              : 'Complete your birth details to see charts.'}
+          </Text>
+        </View>
+      ) : (
+        <Animated.ScrollView
+          style={[styles.chartScroll, { transform: [{ translateX: slideAnim }] }]}
+          contentContainerStyle={[styles.chartContent, { paddingBottom: insets.bottom + 80 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          {activeTab === 0 && (
+            <View>
+              <SectionHeader
+                title="South Indian Kundali"
+                desc={`Lagna in ${chartData.vedic.lagna}  ·  Drag the chart to tilt in 3D`}
+              />
+              <SouthIndianKundli chart={chartData.vedic} />
+
+              {/* Yogas */}
+              {chartData.vedic.yogas.length > 0 && (
+                <View style={styles.yogaSection}>
+                  <Text style={styles.yogaTitle}>Detected Yogas</Text>
+                  {chartData.vedic.yogas.map((yoga, i) => (
+                    <View key={i} style={styles.yogaRow}>
+                      <View style={styles.yogaDot} />
+                      <Text style={styles.yogaText}>{yoga}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+
+          {activeTab === 1 && (
+            <View>
+              <SectionHeader
+                title="Nakshatra Chakra"
+                desc="27 lunar mansions · Your Moon nakshatra highlighted"
+              />
+              <NakshatraWheel chart={chartData.vedic} />
+
+              <View style={styles.nakDetailCard}>
+                <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFillObject} />
+                <Text style={styles.nakDetailTitle}>{chartData.vedic.nakshatra} Nakshatra</Text>
+                <Text style={styles.nakDetailSub}>
+                  Lord: {chartData.vedic.nakshatraLord}  ·  Pada {chartData.vedic.nakshatraPada}  ·  Moon in {chartData.vedic.moonRashi}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {activeTab === 2 && (
+            <View>
+              <SectionHeader
+                title="Graha Shakti"
+                desc="Planetary strength based on dignity and house position"
+              />
+              <GrahaStrength chart={chartData.vedic} />
+            </View>
+          )}
+
+          {activeTab === 3 && (
+            <View>
+              <SectionHeader
+                title="Vimshottari Dasha"
+                desc={`Current: ${chartData.vedic.mahadasha} (${chartData.vedic.mahadashaPeriod})`}
+              />
+              <DashaTimeline chart={chartData.vedic} />
+            </View>
+          )}
+        </Animated.ScrollView>
+      )}
     </View>
   )
 }
 
+function SectionHeader({ title, desc }: { title: string; desc: string }) {
+  return (
+    <View style={sh.wrap}>
+      <Text style={sh.title}>{title}</Text>
+      <Text style={sh.desc}>{desc}</Text>
+      <View style={sh.line} />
+    </View>
+  )
+}
+
+const sh = StyleSheet.create({
+  wrap: { paddingHorizontal: 20, paddingBottom: 16, paddingTop: 4 },
+  title: { fontFamily: Fonts.heading, fontSize: 18, color: '#C9A84C', marginBottom: 4 },
+  desc: { fontFamily: Fonts.body, fontSize: 13, color: 'rgba(255,255,255,0.4)', lineHeight: 20 },
+  line: { height: 1, backgroundColor: 'rgba(201,168,76,0.12)', marginTop: 12 },
+})
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#05050F' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
-  symbol: { fontSize: 48, color: '#7B2FBE', marginBottom: 20 },
-  title: { fontFamily: Fonts.heading, fontSize: 22, color: '#C9A84C', marginBottom: 16, textAlign: 'center' },
-  sub: { fontFamily: Fonts.body, fontSize: 14, color: 'rgba(255,255,255,0.35)', textAlign: 'center', lineHeight: 24 },
+  header: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    alignItems: 'center',
+  },
+  pageTitle: { fontFamily: Fonts.heading, fontSize: 20, color: '#C9A84C', letterSpacing: 2 },
+  pageSub: { fontFamily: Fonts.mystical, fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 4, letterSpacing: 1 },
+
+  tabBar: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: 'rgba(13,13,43,0.8)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    overflow: 'hidden',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  tabActive: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#C9A84C',
+  },
+  tabLabel: {
+    fontFamily: Fonts.accentBold,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.3)',
+    letterSpacing: 0.5,
+  },
+  tabLabelActive: { color: '#C9A84C' },
+  tabSub: {
+    fontFamily: Fonts.body,
+    fontSize: 8,
+    color: 'rgba(255,255,255,0.2)',
+    marginTop: 2,
+  },
+
+  chartScroll: { flex: 1 },
+  chartContent: { paddingTop: 8 },
+
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  loadingSymbol: { fontSize: 40, color: '#C9A84C', marginBottom: 20, opacity: 0.5 },
+  loadingText: { fontFamily: Fonts.mystical, fontSize: 15, color: 'rgba(255,255,255,0.4)', textAlign: 'center', lineHeight: 24 },
+
+  yogaSection: { marginHorizontal: 16, marginTop: 20 },
+  yogaTitle: { fontFamily: Fonts.accent, fontSize: 10, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 12 },
+  yogaRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
+  yogaDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#C9A84C', marginTop: 7 },
+  yogaText: { fontFamily: Fonts.body, fontSize: 13, color: 'rgba(255,255,255,0.6)', flex: 1, lineHeight: 22 },
+
+  nakDetailCard: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.2)',
+    overflow: 'hidden',
+    padding: 18,
+    alignItems: 'center',
+  },
+  nakDetailTitle: { fontFamily: Fonts.heading, fontSize: 18, color: '#C9A84C', marginBottom: 8 },
+  nakDetailSub: { fontFamily: Fonts.body, fontSize: 13, color: 'rgba(255,255,255,0.5)', textAlign: 'center', lineHeight: 22 },
 })
