@@ -15,14 +15,16 @@ import { SouthIndianKundli } from '../../components/charts/SouthIndianKundli'
 import { NakshatraWheel } from '../../components/charts/NakshatraWheel'
 import { GrahaStrength } from '../../components/charts/GrahaStrength'
 import { DashaTimeline } from '../../components/charts/DashaTimeline'
+import { GocharChart } from '../../components/charts/GocharChart'
 
 const { width } = Dimensions.get('window')
 
 const TABS = [
-  { id: 'kundali', label: 'Kundali', sub: 'Birth Chart' },
+  { id: 'kundali',   label: 'Kundali',    sub: 'Birth Chart' },
   { id: 'nakshatra', label: 'Nakshatras', sub: 'Moon Star' },
-  { id: 'grahas', label: 'Grahas', sub: 'Planets' },
-  { id: 'dashas', label: 'Dashas', sub: 'Life Periods' },
+  { id: 'grahas',    label: 'Grahas',     sub: 'Planets' },
+  { id: 'dashas',    label: 'Dashas',     sub: 'Life Periods' },
+  { id: 'gochar',    label: 'Gochar',     sub: 'Transits Today' },
 ]
 
 export function ChartsScreen() {
@@ -65,8 +67,13 @@ export function ChartsScreen() {
         <Text style={styles.pageSub}>Jyotish — Science of Light</Text>
       </View>
 
-      {/* Tab bar */}
-      <View style={styles.tabBar}>
+      {/* Tab bar — scrollable to fit 5 tabs */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tabBar}
+        style={styles.tabBarScroll}
+      >
         {TABS.map((tab, i) => {
           const isActive = i === activeTab
           return (
@@ -89,7 +96,7 @@ export function ChartsScreen() {
             </TouchableOpacity>
           )
         })}
-      </View>
+      </ScrollView>
 
       {/* Chart content */}
       {notReady ? (
@@ -107,6 +114,7 @@ export function ChartsScreen() {
           contentContainerStyle={[styles.chartContent, { paddingBottom: insets.bottom + 80 }]}
           showsVerticalScrollIndicator={false}
         >
+          {/* ── Tab 0: Kundali ── */}
           {activeTab === 0 && (
             <View>
               <SectionHeader
@@ -114,8 +122,6 @@ export function ChartsScreen() {
                 desc={`Lagna in ${chartData.vedic.lagna}  ·  Drag the chart to tilt in 3D`}
               />
               <SouthIndianKundli chart={chartData.vedic} />
-
-              {/* Yogas */}
               {chartData.vedic.yogas.length > 0 && (
                 <View style={styles.yogaSection}>
                   <Text style={styles.yogaTitle}>Detected Yogas</Text>
@@ -130,6 +136,7 @@ export function ChartsScreen() {
             </View>
           )}
 
+          {/* ── Tab 1: Nakshatras ── */}
           {activeTab === 1 && (
             <View>
               <SectionHeader
@@ -137,7 +144,6 @@ export function ChartsScreen() {
                 desc="27 lunar mansions · Your Moon nakshatra highlighted"
               />
               <NakshatraWheel chart={chartData.vedic} />
-
               <View style={styles.nakDetailCard}>
                 <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFillObject} />
                 <Text style={styles.nakDetailTitle}>{chartData.vedic.nakshatra} Nakshatra</Text>
@@ -148,6 +154,7 @@ export function ChartsScreen() {
             </View>
           )}
 
+          {/* ── Tab 2: Grahas ── */}
           {activeTab === 2 && (
             <View>
               <SectionHeader
@@ -158,13 +165,60 @@ export function ChartsScreen() {
             </View>
           )}
 
+          {/* ── Tab 3: Dashas ── */}
           {activeTab === 3 && (
             <View>
               <SectionHeader
                 title="Vimshottari Dasha"
                 desc={`Current: ${chartData.vedic.mahadasha} (${chartData.vedic.mahadashaPeriod})`}
               />
-              <DashaTimeline chart={chartData.vedic} />
+              <DashaTimeline
+                chart={chartData.vedic}
+                pastDashaHistory={chartData.currentTiming?.pastDashaHistory}
+                birthYear={
+                  chartData.birthProfile.birth_date
+                    ? new Date(chartData.birthProfile.birth_date).getFullYear()
+                    : undefined
+                }
+              />
+              {/* Antardasha info */}
+              {chartData.currentTiming?.currentAntardasha && (
+                <View style={styles.antarCard}>
+                  <Text style={styles.antarLabel}>Current Sub-Period (Antardasha)</Text>
+                  <Text style={styles.antarLord}>
+                    {chartData.currentTiming.currentAntardasha.lord} Antardasha
+                  </Text>
+                  <Text style={styles.antarPeriod}>
+                    {chartData.currentTiming.currentAntardasha.startDate}  –  {chartData.currentTiming.currentAntardasha.endDate}
+                  </Text>
+                  <Text style={styles.antarRelation}>
+                    Relationship to Mahadasha lord:
+                    {' '}<Text style={{
+                      color: chartData.currentTiming.currentAntardasha.lordsRelationship === 'friend'
+                        ? '#44FF88'
+                        : chartData.currentTiming.currentAntardasha.lordsRelationship === 'enemy'
+                        ? '#FF4444'
+                        : '#C9A84C',
+                    }}>
+                      {chartData.currentTiming.currentAntardasha.lordsRelationship}
+                    </Text>
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* ── Tab 4: Gochar ── */}
+          {activeTab === 4 && chartData.currentTiming && (
+            <View>
+              <SectionHeader
+                title="Gochar — Current Transits"
+                desc={`Today's planetary positions relative to your natal chart · ${new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+              />
+              <GocharChart
+                natalChart={chartData.vedic}
+                gocharData={chartData.currentTiming.gochar}
+              />
             </View>
           )}
         </Animated.ScrollView>
@@ -192,35 +246,28 @@ const sh = StyleSheet.create({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#05050F' },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    alignItems: 'center',
-  },
+  header: { paddingHorizontal: 20, paddingBottom: 12, alignItems: 'center' },
   pageTitle: { fontFamily: Fonts.heading, fontSize: 20, color: '#C9A84C', letterSpacing: 2 },
   pageSub: { fontFamily: Fonts.mystical, fontSize: 12, color: 'rgba(255,255,255,0.35)', marginTop: 4, letterSpacing: 1 },
 
+  tabBarScroll: { maxHeight: 62, marginHorizontal: 16, marginBottom: 8 },
   tabBar: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginBottom: 8,
     backgroundColor: 'rgba(13,13,43,0.8)',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
     overflow: 'hidden',
+    flexDirection: 'row',
   },
   tab: {
-    flex: 1,
     paddingVertical: 10,
+    paddingHorizontal: 12,
     alignItems: 'center',
     position: 'relative',
     overflow: 'hidden',
+    minWidth: 68,
   },
-  tabActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#C9A84C',
-  },
+  tabActive: { borderBottomWidth: 2, borderBottomColor: '#C9A84C' },
   tabLabel: {
     fontFamily: Fonts.accentBold,
     fontSize: 10,
@@ -228,12 +275,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   tabLabelActive: { color: '#C9A84C' },
-  tabSub: {
-    fontFamily: Fonts.body,
-    fontSize: 8,
-    color: 'rgba(255,255,255,0.2)',
-    marginTop: 2,
-  },
+  tabSub: { fontFamily: Fonts.body, fontSize: 8, color: 'rgba(255,255,255,0.2)', marginTop: 2 },
 
   chartScroll: { flex: 1 },
   chartContent: { paddingTop: 8 },
@@ -249,15 +291,19 @@ const styles = StyleSheet.create({
   yogaText: { fontFamily: Fonts.body, fontSize: 13, color: 'rgba(255,255,255,0.6)', flex: 1, lineHeight: 22 },
 
   nakDetailCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.2)',
-    overflow: 'hidden',
-    padding: 18,
-    alignItems: 'center',
+    marginHorizontal: 16, marginTop: 16, borderRadius: 16, borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.2)', overflow: 'hidden', padding: 18, alignItems: 'center',
   },
   nakDetailTitle: { fontFamily: Fonts.heading, fontSize: 18, color: '#C9A84C', marginBottom: 8 },
   nakDetailSub: { fontFamily: Fonts.body, fontSize: 13, color: 'rgba(255,255,255,0.5)', textAlign: 'center', lineHeight: 22 },
+
+  antarCard: {
+    marginHorizontal: 16, marginTop: 16, borderRadius: 16, borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.15)', padding: 18,
+    backgroundColor: 'rgba(13,13,43,0.8)',
+  },
+  antarLabel: { fontFamily: Fonts.accent, fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 },
+  antarLord: { fontFamily: Fonts.heading, fontSize: 16, color: '#C9A84C', marginBottom: 4 },
+  antarPeriod: { fontFamily: Fonts.body, fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 6 },
+  antarRelation: { fontFamily: Fonts.body, fontSize: 13, color: 'rgba(255,255,255,0.5)' },
 })
