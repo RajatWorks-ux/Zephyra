@@ -47,12 +47,12 @@ export type AuthScreen = 'signin' | 'signup'
 
 // ─── Vedic Graha (Planet) ─────────────────────────────────────────────────────
 export interface VedicGraha {
-  name: string        // 'Surya', 'Chandra', 'Mangal', etc.
-  rashi: string       // Sign: 'Mesha', 'Vrishabha', etc.
-  degree: number      // Degree within sign (0-29.99)
-  house: number       // 1-12
-  nakshatra: string   // Nakshatra name
-  nakshatraPada: number // 1-4
+  name: string
+  rashi: string
+  degree: number
+  house: number
+  nakshatra: string
+  nakshatraPada: number
   isRetrograde: boolean
   isExalted: boolean
   isDebilitated: boolean
@@ -60,47 +60,72 @@ export interface VedicGraha {
 
 // ─── Vedic Chart ─────────────────────────────────────────────────────────────
 export interface VedicChart {
-  // Lagna (Ascendant)
-  lagna: string           // e.g. 'Mesha'
+  lagna: string
   lagnaDegree: number
-
-  // Sun (Surya)
-  rashi: string           // Sun's Rashi
+  rashi: string
   rashiDegree: number
-
-  // Moon (Chandra)
   moonRashi: string
   moonDegree: number
-
-  // Nakshatra
   nakshatra: string
   nakshatraPada: number
   nakshatraLord: string
-
-  // Dasha
   mahadasha: string
   mahadashaPeriod: string
   antardasha: string
-
-  // All 9 Grahas
   grahas: VedicGraha[]
-
-  // Houses — which Rashi is in which house
-  houses: string[]   // index 0 = 1st house Rashi, index 11 = 12th house
-
-  // Basic Yogas detected
+  houses: string[]
   yogas: string[]
 }
 
-// ─── Chart Data (Vedic only now) ─────────────────────────────────────────────
+// ─── New Timing Types ─────────────────────────────────────────────────────────
+export interface GocharData {
+  transitingPlanets: VedicGraha[]
+  keyConditions: string[]
+}
+
+export interface AntardashaInfo {
+  lord: string
+  startDate: string
+  endDate: string
+  lordsRelationship: 'friend' | 'neutral' | 'enemy'
+}
+
+export interface PastDashaEntry {
+  lord: string
+  startAge: number
+  endAge: number
+}
+
+export interface SadeSatiStatus {
+  isActive: boolean
+  phase: 'starting' | 'peak' | 'ending' | null
+  endYear: number | null
+}
+
+export type LifeStage = 'formation' | 'consolidation' | 'mastery' | 'transcendence'
+
+export interface CurrentTimingData {
+  gochar: GocharData
+  currentAntardasha: AntardashaInfo
+  pastDashaHistory: PastDashaEntry[]
+  sadeSatiStatus: SadeSatiStatus
+  jupiterTransitFavorable: boolean
+  jupiterHouseFromMoon: number
+  jupiterHouseFromLagna: number
+  userAge: number
+  lifeStage: LifeStage
+}
+
+// ─── Chart Data ───────────────────────────────────────────────────────────────
 export interface ChartData {
   vedic: VedicChart
   birthProfile: BirthProfile
   calculatedAt: string
+  currentTiming?: CurrentTimingData   // optional so old cached readings don't break
 }
 
 export interface CompatibleSign {
-  sign: string       // Will now be Vedic Rashi names
+  sign: string
   percentage: number
 }
 
@@ -127,7 +152,6 @@ export interface Language {
 export interface ParsedReading {
   past_statements: string[]
   present_statements: string[]
-
   chapter_identity: string
   chapter_love: string
   chapter_career: string
@@ -135,7 +159,6 @@ export interface ParsedReading {
   chapter_family: string
   chapter_purpose: string
   chapter_now: string
-
   chapter_identity_summary: string
   chapter_love_summary: string
   chapter_career_summary: string
@@ -143,17 +166,14 @@ export interface ParsedReading {
   chapter_family_summary: string
   chapter_purpose_summary: string
   chapter_now_summary: string
-
   compatible_signs: CompatibleSign[]
   career_strengths: string[]
   best_months_love: number[]
   best_months_money: number[]
   daily_score_base: number
   daily_energy_summary: string
-  // Optional fields added in v2 — absent in older cached readings, UI falls back to '—'
   daily_caution?: string
   peak_hours?: string
-
   language?: string
 }
 
@@ -166,5 +186,5 @@ export interface Reading {
   created_at: string
   reading_seed: ReadingSeed | null
   reading_language: string | null
-}
+  }
 
