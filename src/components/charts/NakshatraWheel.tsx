@@ -1,9 +1,8 @@
 import React from 'react'
 import { View, Text, StyleSheet, Dimensions } from 'react-native'
-import {
-  Canvas, Path, Skia, Group, Circle, Paint,
-  RadialGradient, BlurMask, vec,
-} from '@shopify/react-native-skia'
+import Svg, {
+  Path, Circle, Defs, RadialGradient, Stop, G,
+} from 'react-native-svg'
 import { Fonts } from '../../constants/fonts'
 import type { VedicChart } from '../../types'
 
@@ -48,98 +47,125 @@ const NAKSHATRAS = [
 const SPAN = 360 / 27
 const DEG_TO_RAD = Math.PI / 180
 
-function makeArcPath(
-  cx: number, cy: number, r1: number, r2: number,
-  startDeg: number, endDeg: number
-): ReturnType<typeof Skia.Path.Make> {
-  const path = Skia.Path.Make()
-  const s1 = (startDeg - 90) * DEG_TO_RAD
-  const e1 = (endDeg - 90) * DEG_TO_RAD
-  const cosSt = Math.cos(s1), sinSt = Math.sin(s1)
-  const cosEn = Math.cos(e1), sinEn = Math.sin(e1)
+// Hex color to rgba string
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
 
-  path.moveTo(cx + r1 * cosSt, cy + r1 * sinSt)
-  path.arcToOval(
-    { x: cx - r1, y: cy - r1, width: r1 * 2, height: r1 * 2 },
-    startDeg - 90, endDeg - startDeg, false
-  )
-  path.lineTo(cx + r2 * cosEn, cy + r2 * sinEn)
-  path.arcToOval(
-    { x: cx - r2, y: cy - r2, width: r2 * 2, height: r2 * 2 },
-    endDeg - 90, -(endDeg - startDeg), false
-  )
-  path.close()
-  return path
+// Build SVG donut-arc path string
+function makeArcPath(
+  cx: number, cy: number,
+  r1: number, r2: number,
+  startDeg: number, endDeg: number
+): string {
+  // -90 offset so 0° is at top
+  const s = (startDeg - 90) * DEG_TO_RAD
+  const e = (endDeg - 90) * DEG_TO_RAD
+  const largeArc = endDeg - startDeg > 180 ? 1 : 0
+
+  const x1 = cx + r1 * Math.cos(s)
+  const y1 = cy + r1 * Math.sin(s)
+  const x2 = cx + r1 * Math.cos(e)
+  const y2 = cy + r1 * Math.sin(e)
+  const x3 = cx + r2 * Math.cos(e)
+  const y3 = cy + r2 * Math.sin(e)
+  const x4 = cx + r2 * Math.cos(s)
+  const y4 = cy + r2 * Math.sin(s)
+
+  return [
+    `M ${x1} ${y1}`,
+    `A ${r1} ${r1} 0 ${largeArc} 1 ${x2} ${y2}`,
+    `L ${x3} ${y3}`,
+    `A ${r2} ${r2} 0 ${largeArc} 0 ${x4} ${y4}`,
+    'Z',
+  ].join(' ')
 }
 
 export function NakshatraWheel({ chart }: { chart: VedicChart }) {
   const currentNakIdx = NAKSHATRAS.findIndex(n => n.name === chart.nakshatra)
+  const currentColor = NAKSHATRAS[Math.max(0, currentNakIdx)]?.color ?? '#C9A84C'
 
   return (
     <View style={styles.wrapper}>
-      <Canvas style={{ width: SIZE, height: SIZE }}>
+      <Svg width={SIZE} height={SIZE}>
+        <Defs>
+          <RadialGradient id="centerGrad" cx="50%" cy="50%" r="50%">
+            <Stop offset="0%" stopColor="rgba(50,25,100,0.95)" />
+            <Stop offset="100%" stopColor="rgba(10,5,25,0.99)" />
+          </RadialGradient>
+        </Defs>
+
         {/* Background circle */}
-        <Circle cx={CX} cy={CY} r={OUTER_R + 2}>
-          <Paint color="rgba(5,5,20,0.95)" />
-        </Circle>
+        <Circle
+          cx={CX} cy={CY} r={OUTER_R + 2}
+          fill="rgba(5,5,20,0.95)"
+        />
 
         {/* 27 Nakshatra segments */}
         {NAKSHATRAS.map((nak, i) => {
           const startDeg = i * SPAN
           const endDeg = startDeg + SPAN - 0.5
           const isCurrent = i === currentNakIdx
-          const path = makeArcPath(CX, CY, INNER_R, OUTER_R, startDeg, endDeg)
+          const d = makeArcPath(CX, CY, INNER_R, OUTER_R, startDeg, endDeg)
 
           return (
-            <Group key={nak.name}>
-              <Path path={path}>
-                <Paint color={isCurrent ? nak.color : nak.color + '30'} style="fill" />
-                {isCurrent && <BlurMask blur={6} style="outer" respectCTM />}
-              </Path>
-              <Path path={path}>
-                <Paint
-                  color={isCurrent ? nak.color + 'CC' : 'rgba(255,255,255,0.05)'}
-                  style="stroke"
-                  strokeWidth={isCurrent ? 2 : 0.5}
+            <G key={nak.name}>
+              {/* Fill */}
+              <Path
+                d={d}
+                fill={isCurrent ? hexToRgba(nak.color, 0.85) : hexToRgba(nak.color, 0.19)}
+              />
+              {/* Stroke */}
+              <Path
+                d={d}
+                fill="none"
+                stroke={isCurrent ? hexToRgba(nak.color, 0.8) : 'rgba(255,255,255,0.05)'}
+                strokeWidth={isCurrent ? 2 : 0.5}
+              />
+              {/* Glow ring for current (simulated with extra stroke + opacity) */}
+              {isCurrent && (
+                <Path
+                  d={d}
+                  fill="none"
+                  stroke={hexToRgba(nak.color, 0.25)}
+                  strokeWidth={6}
                 />
-              </Path>
-            </Group>
+              )}
+            </G>
           )
         })}
 
         {/* Inner dark fill */}
-        <Circle cx={CX} cy={CY} r={INNER_R - 1}>
-          <Paint color="rgba(5,5,20,0.98)" />
-        </Circle>
+        <Circle cx={CX} cy={CY} r={INNER_R - 1} fill="rgba(5,5,20,0.98)" />
 
         {/* Outer glow ring for current nakshatra */}
         {currentNakIdx >= 0 && (
-          <Circle cx={CX} cy={CY} r={OUTER_R + 8} style="stroke">
-            <Paint
-              color={NAKSHATRAS[currentNakIdx].color + '30'}
-              strokeWidth={6}
-            />
-            <BlurMask blur={8} style="normal" respectCTM />
-          </Circle>
+          <Circle
+            cx={CX} cy={CY} r={OUTER_R + 8}
+            fill="none"
+            stroke={hexToRgba(currentColor, 0.18)}
+            strokeWidth={6}
+          />
         )}
 
-        {/* Center decoration */}
-        <Circle cx={CX} cy={CY} r={CENTER_R}>
-          <Paint>
-            <RadialGradient
-              c={vec(CX, CY)}
-              r={CENTER_R}
-              colors={['rgba(50,25,100,0.95)', 'rgba(10,5,25,0.99)']}
-            />
-          </Paint>
-        </Circle>
-        <Circle cx={CX} cy={CY} r={CENTER_R} style="stroke">
-          <Paint color="rgba(201,168,76,0.4)" strokeWidth={1} />
-        </Circle>
-      </Canvas>
+        {/* Center gradient circle */}
+        <Circle cx={CX} cy={CY} r={CENTER_R} fill="url(#centerGrad)" />
+        <Circle
+          cx={CX} cy={CY} r={CENTER_R}
+          fill="none"
+          stroke="rgba(201,168,76,0.4)"
+          strokeWidth={1}
+        />
+      </Svg>
 
       {/* Center label overlay */}
-      <View style={[styles.centerLabel, { width: CENTER_R * 2, height: CENTER_R * 2, borderRadius: CENTER_R }]}>
+      <View style={[
+        styles.centerLabel,
+        { width: CENTER_R * 2, height: CENTER_R * 2, borderRadius: CENTER_R },
+      ]}>
         <Text style={styles.moonSymbol}>☽</Text>
         <Text style={styles.nakName} numberOfLines={2}>{chart.nakshatra}</Text>
         <Text style={styles.pada}>Pada {chart.nakshatraPada}</Text>
@@ -147,7 +173,7 @@ export function NakshatraWheel({ chart }: { chart: VedicChart }) {
 
       {/* Info row */}
       <View style={styles.infoRow}>
-        <View style={[styles.dot, { backgroundColor: NAKSHATRAS[Math.max(0, currentNakIdx)].color }]} />
+        <View style={[styles.dot, { backgroundColor: currentColor }]} />
         <Text style={styles.infoText}>
           Moon in {chart.nakshatra}  ·  {chart.nakshatraLord} lord
         </Text>
@@ -200,3 +226,4 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.65)',
   },
 })
+  
