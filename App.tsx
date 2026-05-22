@@ -6,62 +6,29 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import * as SplashScreen from 'expo-splash-screen'
 import * as Linking from 'expo-linking'
-import {
-  useFonts,
-  CinzelDecorative_400Regular,
-} from '@expo-google-fonts/cinzel-decorative'
-import {
-  Inter_400Regular,
-  Inter_600SemiBold,
-} from '@expo-google-fonts/inter'
-import {
-  Orbitron_400Regular,
-  Orbitron_600SemiBold,
-} from '@expo-google-fonts/orbitron'
-import {
-  CormorantGaramond_400Regular_Italic,
-} from '@expo-google-fonts/cormorant-garamond'
+import { useFonts, CinzelDecorative_400Regular } from '@expo-google-fonts/cinzel-decorative'
+import { Inter_400Regular, Inter_600SemiBold } from '@expo-google-fonts/inter'
+import { Orbitron_400Regular, Orbitron_600SemiBold } from '@expo-google-fonts/orbitron'
+import { CormorantGaramond_400Regular_Italic } from '@expo-google-fonts/cormorant-garamond'
 import { RootNavigator } from './src/navigation/RootNavigator'
 import { useAuthStore } from './src/store/authStore'
 import { useSettingsStore } from './src/store/settingsStore'
+import { prefetchAllVideos } from './src/services/videoCache'  // ← only new line
 
 SplashScreen.preventAutoHideAsync()
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DEEP LINK CONFIG
-//
-// Linking.createURL('/') automatically generates the right prefix:
-//   Expo Go  →  exp://192.168.1.2:8081/--
-//   Built APK → zephyra://
-//
-// When a user taps a link in their email, Supabase redirects to one of:
-//   exp://192.168.1.2:8081/--/reset-password?token_hash=XXX&type=recovery
-//   exp://192.168.1.2:8081/--/account-created?token_hash=XXX&type=signup
-//
-// NavigationContainer reads the URL, matches the path below, and opens
-// the correct screen — passing token_hash and type as route.params.
-// ─────────────────────────────────────────────────────────────────────────────
 const linking = {
-  prefixes: [
-    Linking.createURL('/'),
-    'zephyra://',
-  ],
+  prefixes: [Linking.createURL('/'), 'zephyra://'],
   config: {
     screens: {
-      PasswordReset: {
-        path: 'reset-password',
-      },
-      AccountCreated: {
-        path: 'account-created',
-      },
+      PasswordReset: { path: 'reset-password' },
+      AccountCreated: { path: 'account-created' },
     },
   },
 }
 
 export default function App() {
   const { initialize } = useAuthStore()
-  // BUG #6 FIX: load persisted language preference at app startup so ALL screens
-  // see the correct language immediately — not lazily when ReadingScreen mounts
   const { loadSettings } = useSettingsStore()
 
   const [fontsLoaded] = useFonts({
@@ -75,11 +42,9 @@ export default function App() {
 
   useEffect(() => {
     async function prepare() {
-      // Run auth init and settings load in parallel for faster startup
       await Promise.all([initialize(), loadSettings()])
-      if (fontsLoaded) {
-        await SplashScreen.hideAsync()
-      }
+      if (fontsLoaded) await SplashScreen.hideAsync()
+      prefetchAllVideos() // ← only new line, runs in background, no await
     }
     prepare()
   }, [fontsLoaded])
