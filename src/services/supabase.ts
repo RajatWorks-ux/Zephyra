@@ -130,11 +130,10 @@ export async function saveReading(
 ) {
   const { data, error } = await supabase
     .from('readings')
-    .upsert({
-      user_id: userId,
-      ...payload,
-      updated_at: new Date().toISOString(),
-    })
+    .upsert(
+      { user_id: userId, ...payload, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    )
     .select()
     .single()
   return { data, error }
@@ -149,3 +148,4 @@ export async function updateReadingSeed(userId: string, seed: ReadingSeed) {
   return { error }
   }
 
+    
