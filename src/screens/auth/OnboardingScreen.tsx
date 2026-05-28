@@ -32,9 +32,9 @@ const slides = [
   {
     id: '2',
     video: Videos.onboarding2,
-    tag: 'EVERY TRADITION',
-    title: '20 Systems.\nOne Truth.',
-    subtitle: 'Western, Vedic, Chinese, Mayan, Celtic, Egyptian, Kabbalistic, Persian, Tibetan and eleven more traditions speak to your chart.',
+    tag: 'VEDIC ASTROLOGY',
+    title: 'Ancient Vedic\nWisdom.',
+    subtitle: 'The oldest astrological tradition on Earth — Jyotish — reads your birth chart to reveal the precise karma, gifts, and timing written into your life.',
     accent: '#7C3AED',
   },
   {
@@ -255,3 +255,4 @@ const styles = StyleSheet.create({
   },
   nextText: { fontFamily: Fonts.bodySemiBold, fontSize: 17, color: '#FFFFFF', letterSpacing: 0.5 },
 })
+        
