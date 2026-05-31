@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import {
   View, Text, StyleSheet, Dimensions, TouchableOpacity,
   Modal, ScrollView, Animated, PanResponder,
@@ -6,17 +6,12 @@ import {
 import { LinearGradient } from 'expo-linear-gradient'
 import { BlurView } from 'expo-blur'
 import * as Haptics from 'expo-haptics'
+import Svg, { Circle, Defs, Path, Text as SvgText, TextPath } from 'react-native-svg'
 import { Fonts } from '../../constants/fonts'
 import type { VedicChart, VedicGraha } from '../../types'
-import {
-  KundliGrid, CenterMandala,
-  RASHI_SHORT, RASHI_TO_CELL,
-} from './KundliGrid'
-import type { GridCellData, GridPlanet } from './KundliGrid'
 
 const { width } = Dimensions.get('window')
 const CHART_SIZE = Math.min(width - 32, 364)
-const CELL = CHART_SIZE / 4
 
 // ─── Vedic Constants ──────────────────────────────────────────────────────────
 const RASHI_NAMES = [
@@ -26,16 +21,22 @@ const RASHI_NAMES = [
 ]
 const RASHI_SYMBOL = ['♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓']
 
-const GRAHA_INFO: Record<string, { abbr: string; color: string; fullName: string }> = {
-  Surya:   { abbr: 'Su', color: '#FF9500', fullName: 'Surya (Sun)' },
-  Chandra: { abbr: 'Mo', color: '#C0C8FF', fullName: 'Chandra (Moon)' },
-  Mangal:  { abbr: 'Ma', color: '#FF3B3B', fullName: 'Mangal (Mars)' },
-  Budh:    { abbr: 'Me', color: '#00C060', fullName: 'Budha (Mercury)' },
-  Guru:    { abbr: 'Ju', color: '#FFD700', fullName: 'Guru (Jupiter)' },
-  Shukra:  { abbr: 'Ve', color: '#FF80AA', fullName: 'Shukra (Venus)' },
-  Shani:   { abbr: 'Sa', color: '#8BA0C0', fullName: 'Shani (Saturn)' },
-  Rahu:    { abbr: 'Ra', color: '#9090BB', fullName: 'Rahu (North Node)' },
-  Ketu:    { abbr: 'Ke', color: '#B87840', fullName: 'Ketu (South Node)' },
+export const RASHI_SHORT = [
+  'Mes', 'Vri', 'Mit', 'Kar',
+  'Sin', 'Kan', 'Tul', 'Vsc',
+  'Dha', 'Mak', 'Kum', 'Mee',
+]
+
+const GRAHA_INFO: Record<string, { abbr: string; color: string; fullName: string; glyph: string }> = {
+  Surya:   { abbr: 'Su', color: '#FF9500', fullName: 'Surya (Sun)', glyph: '☀' },
+  Chandra: { abbr: 'Mo', color: '#C0C8FF', fullName: 'Chandra (Moon)', glyph: '☽' },
+  Mangal:  { abbr: 'Ma', color: '#FF3B3B', fullName: 'Mangal (Mars)', glyph: '♂' },
+  Budh:    { abbr: 'Me', color: '#00C060', fullName: 'Budha (Mercury)', glyph: '☿' },
+  Guru:    { abbr: 'Ju', color: '#FFD700', fullName: 'Guru (Jupiter)', glyph: '♃' },
+  Shukra:  { abbr: 'Ve', color: '#FF80AA', fullName: 'Shukra (Venus)', glyph: '♀' },
+  Shani:   { abbr: 'Sa', color: '#8BA0C0', fullName: 'Shani (Saturn)', glyph: '♄' },
+  Rahu:    { abbr: 'Ra', color: '#9090BB', fullName: 'Rahu (North Node)', glyph: '☊' },
+  Ketu:    { abbr: 'Ke', color: '#B87840', fullName: 'Ketu (South Node)', glyph: '☋' },
 }
 
 const HOUSE_MEANINGS = [
@@ -53,18 +54,46 @@ const HOUSE_MEANINGS = [
   'Losses, expenses, foreign lands, moksha, isolation, sleep',
 ]
 
-// ─── CellInfo for detail modal ────────────────────────────────────────────────
-interface CellInfo {
+// ─── Utility ──────────────────────────────────────────────────────────────────
+function hexToRgba(hex: string, alpha: number) {
+  let r = 255, g = 255, b = 255
+  if (hex.startsWith('#') && hex.length >= 7) {
+    r = parseInt(hex.slice(1, 3), 16)
+    g = parseInt(hex.slice(3, 5), 16)
+    b = parseInt(hex.slice(5, 7), 16)
+  }
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+export interface GridPlanet {
+  name: string
+  abbr: string
+  color: string
+  glyph: string
+  isRetrograde?: boolean
+  isExalted?: boolean
+  isDebilitated?: boolean
+  isTransit?: boolean
+}
+
+export interface GridCellData {
   rashiIdx: number
   houseNum: number
-  planets: VedicGraha[]
   isLagna: boolean
   isKendra: boolean
   isTrikona: boolean
+  planets: GridPlanet[]
 }
 
-// ─── Bottom Sheet Modal ────────────────────────────────────────────────────────
-function CellDetailModal({ cell, onClose }: { cell: CellInfo | null; onClose: () => void }) {
+interface CellInfo extends GridCellData {
+  vedicGrahas: VedicGraha[]
+  lagnaSign: string
+  yogas: string[]
+}
+
+// ─── ChartOracleModal ─────────────────────────────────────────────────────────
+function ChartOracleModal({ cell, onClose }: { cell: CellInfo | null; onClose: () => void }) {
   if (!cell) return null
 
   const slideAnim = useRef(new Animated.Value(400)).current
@@ -76,17 +105,22 @@ function CellDetailModal({ cell, onClose }: { cell: CellInfo | null; onClose: ()
     Animated.timing(slideAnim, { toValue: 400, duration: 250, useNativeDriver: true }).start(onClose)
   }
 
+  const isDusthana = [6, 8, 12].includes(cell.houseNum)
+  const classification = cell.isLagna ? 'Lagna' : cell.isKendra ? 'Kendra' : cell.isTrikona ? 'Trikona' : isDusthana ? 'Dusthana' : 'Neutral House'
+  const planetNames = cell.planets.length ? cell.planets.map(p => p.name).join(', ') : 'None'
+  const activeYogas = cell.yogas.length ? cell.yogas.join(', ') : 'None'
+  
+  const oracleContext = `House ${cell.houseNum} — ${RASHI_NAMES[cell.rashiIdx]} — Planets: ${planetNames} — ${classification} — Lagna: ${cell.lagnaSign} — Yogas active: ${activeYogas}`
+
   return (
     <Modal transparent animationType="none" onRequestClose={close}>
       <TouchableOpacity style={dm.overlay} onPress={close} activeOpacity={1} />
       <Animated.View style={[dm.sheet, { transform: [{ translateY: slideAnim }] }]}>
         <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFillObject} />
-        <LinearGradient
-          colors={['rgba(30,10,60,0.95)', 'rgba(5,5,20,0.98)']}
-          style={StyleSheet.absoluteFillObject}
-        />
+        <LinearGradient colors={['rgba(30,10,60,0.95)', 'rgba(5,5,20,0.98)']} style={StyleSheet.absoluteFillObject} />
         <View style={dm.handle} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={dm.scroll}>
+          
           <View style={dm.header}>
             <View>
               <Text style={dm.rashiText}>{RASHI_NAMES[cell.rashiIdx]}</Text>
@@ -94,14 +128,22 @@ function CellDetailModal({ cell, onClose }: { cell: CellInfo | null; onClose: ()
             </View>
             <Text style={dm.symbolText}>{RASHI_SYMBOL[cell.rashiIdx]}</Text>
           </View>
+
+          {/* Context Display for AI */}
+          <View style={dm.contextBlock}>
+             <Text style={dm.contextTitle}>Oracle Context Sent to AI:</Text>
+             <Text style={dm.contextString}>{oracleContext}</Text>
+          </View>
+
           <View style={dm.meaningCard}>
             <Text style={dm.meaningLabel}>House Domain</Text>
             <Text style={dm.meaningText}>{HOUSE_MEANINGS[cell.houseNum - 1]}</Text>
           </View>
-          {cell.planets.length > 0 && (
+
+          {cell.vedicGrahas.length > 0 && (
             <View style={dm.planetsSection}>
               <Text style={dm.sectionLabel}>Planets Here</Text>
-              {cell.planets.map((p) => {
+              {cell.vedicGrahas.map((p) => {
                 const gi = GRAHA_INFO[p.name]
                 return (
                   <View key={p.name} style={dm.planetRow}>
@@ -122,7 +164,8 @@ function CellDetailModal({ cell, onClose }: { cell: CellInfo | null; onClose: ()
               })}
             </View>
           )}
-          {cell.planets.length === 0 && (
+
+          {cell.vedicGrahas.length === 0 && (
             <View style={dm.emptyPlanets}>
               <Text style={dm.emptyText}>No planets placed in this house at birth.</Text>
               <Text style={dm.emptySubText}>An empty house is read through its lord — the ruling planet of {RASHI_NAMES[cell.rashiIdx]}.</Text>
@@ -136,6 +179,420 @@ function CellDetailModal({ cell, onClose }: { cell: CellInfo | null; onClose: ()
     </Modal>
   )
 }
+
+// ─── Single Cell ──────────────────────────────────────────────────────────────
+function GridCell({ cell, size, onPress }: { cell: GridCellData, size: number, onPress?: (cell: GridCellData) => void }) {
+  const pressAnim = useRef(new Animated.Value(1)).current
+  const lagnaPulse = useRef(new Animated.Value(8)).current
+
+  useEffect(() => {
+    if (cell.isLagna) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(lagnaPulse, { toValue: 20, duration: 2000, useNativeDriver: false }),
+          Animated.timing(lagnaPulse, { toValue: 8, duration: 2000, useNativeDriver: false }),
+        ])
+      ).start()
+    }
+  }, [cell.isLagna])
+
+  const isEmpty = cell.planets.length === 0
+
+  let gradColors: readonly [string, string] = ['rgba(13,13,43,0.95)', 'rgba(5,5,20,0.98)']
+  let borderColor = 'rgba(255,255,255,0.05)'
+
+  if (cell.isLagna) {
+    gradColors = ['rgba(60,35,10,0.98)', 'rgba(25,12,4,0.99)']
+    borderColor = '#C9A84C'
+  } else if (!isEmpty) {
+    if (cell.isKendra) {
+      gradColors = ['rgba(35,15,75,0.95)', 'rgba(15,6,30,0.98)']
+      borderColor = 'rgba(123,47,190,0.5)'
+    } else if (cell.isTrikona) {
+      gradColors = ['rgba(50,30,8,0.9)', 'rgba(18,10,3,0.97)']
+      borderColor = 'rgba(201,168,76,0.35)'
+    }
+  }
+
+  return (
+    <Animated.View style={{ transform: [{ scale: pressAnim }] }}>
+      <TouchableOpacity
+        activeOpacity={1}
+        onPressIn={() => Animated.spring(pressAnim, { toValue: 0.93, useNativeDriver: true, speed: 30 }).start()}
+        onPressOut={() => Animated.spring(pressAnim, { toValue: 1, useNativeDriver: true, speed: 20 }).start()}
+        onPress={() => {
+          if (onPress) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+            onPress(cell)
+          }
+        }}
+        style={[gc.cell, { width: size, height: size, borderColor, borderWidth: cell.isLagna ? 1.5 : 1 }]}
+      >
+        <LinearGradient colors={gradColors} style={StyleSheet.absoluteFillObject} />
+
+        {cell.isLagna && (
+          <Animated.View style={[StyleSheet.absoluteFillObject, { shadowColor: '#C9A84C', shadowRadius: lagnaPulse, shadowOpacity: 1 }]} pointerEvents="none" />
+        )}
+
+        {/* Empty House Watermark */}
+        {isEmpty && !cell.isLagna && (
+          <Text style={gc.watermark}>{RASHI_SYMBOL[cell.rashiIdx]}</Text>
+        )}
+
+        {/* Top-Left Lagna Mark */}
+        {cell.isLagna && <Text style={gc.lagnaMark}>As</Text>}
+
+        {/* Bottom-Right Kendra/Trikona Marks */}
+        {!cell.isLagna && cell.isKendra && !isEmpty && <Text style={[gc.cornerMark, { color: '#7B2FBE' }]}>◆</Text>}
+        {!cell.isLagna && cell.isTrikona && !isEmpty && <Text style={[gc.cornerMark, { color: '#BEA02F' }]}>△</Text>}
+
+        <Text style={[gc.houseNum, { color: cell.isLagna ? '#C9A84C' : 'rgba(255,255,255,0.25)' }]}>
+          {cell.houseNum}
+        </Text>
+
+        <View style={gc.planetsStack}>
+          {cell.planets.map((p, i) => {
+            const bg = hexToRgba(p.color, 0.15)
+            const border = hexToRgba(p.color, 0.5)
+            return (
+              <View
+                key={i}
+                style={[
+                  gc.planetChip,
+                  { backgroundColor: bg, borderColor: p.isDebilitated ? '#FF4444' : border, borderStyle: p.isDebilitated ? 'dotted' : 'solid' },
+                  p.isExalted && { shadowColor: p.color, shadowOpacity: 0.8, shadowRadius: 6, elevation: 4 }
+                ]}
+              >
+                <Text style={{ fontSize: 12, color: p.color, textAlign: 'center' }}>{p.glyph}</Text>
+                {p.isRetrograde && <Text style={gc.retrogradeText}>ℝ</Text>}
+              </View>
+            )
+          })}
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  )
+}
+
+// ─── Center Mandala ───────────────────────────────────────────────────────────
+function CenterMandala({ size, yogas }: { size: number; yogas: string[] }) {
+  const yogaString = yogas.length > 0 ? yogas.join('  •  ').toUpperCase() : 'NO MAJOR YOGAS DETECTED'
+  const center = size / 2
+
+  return (
+    <View style={[cm.wrap, { width: size, height: size }]}>
+      <LinearGradient colors={['rgba(20,10,30,0.98)', 'rgba(5,5,15,0.99)']} style={StyleSheet.absoluteFillObject} />
+      
+      <Svg width={size} height={size} style={StyleSheet.absoluteFillObject}>
+        <Defs>
+           {/* Circular path for the text to follow */}
+          <Path
+            id="yogaPath"
+            d={`M ${size * 0.1}, ${center} a ${size * 0.4},${size * 0.4} 0 1,1 ${size * 0.8},0 a ${size * 0.4},${size * 0.4} 0 1,1 -${size * 0.8},0`}
+          />
+        </Defs>
+        <Circle cx={center} cy={center} r={size * 0.45} stroke="rgba(201,168,76,0.15)" strokeWidth={1} fill="none" />
+        <Circle cx={center} cy={center} r={size * 0.35} stroke="rgba(123,47,190,0.12)" strokeWidth={1} fill="none" />
+        <Circle cx={center} cy={center} r={size * 0.25} stroke="rgba(47,190,190,0.08)" strokeWidth={1} fill="none" />
+        
+        <SvgText fill="rgba(201,168,76,0.5)" fontSize="7" fontFamily="Orbitron_400Regular" letterSpacing="1">
+          <TextPath href="#yogaPath" startOffset="50%" textAnchor="middle">
+            {yogaString}
+          </TextPath>
+        </SvgText>
+      </Svg>
+
+      <View style={cm.content}>
+        <Text style={cm.symbol}>✦</Text>
+        <Text style={cm.appName}>ZEPHYRA</Text>
+        <Text style={cm.subText}>Vedic Kundali</Text>
+      </View>
+    </View>
+  )
+}
+
+// ─── Kundli Grid ──────────────────────────────────────────────────────────────
+function KundliGrid({ cells, chartSize, centerContent, onCellPress }: { cells: GridCellData[], chartSize: number, centerContent: React.ReactNode, onCellPress: (c: GridCellData) => void }) {
+  const CELL = chartSize / 4
+  const CENTER_SIZE = CELL * 2
+
+  const byRashi = useMemo(() => {
+    const map: Record<number, GridCellData> = {}
+    cells.forEach(c => { map[c.rashiIdx] = c })
+    return map
+  }, [cells])
+
+  const renderCell = (idx: number) => {
+    const cell = byRashi[idx]
+    if (!cell) return <View key={idx} style={{ width: CELL, height: CELL }} />
+    return <GridCell key={idx} cell={cell} size={CELL} onPress={onCellPress} />
+  }
+
+  return (
+    <View style={[grid.container, { width: chartSize, height: chartSize }]}>
+      <View style={grid.row}>{[11, 0, 1, 2].map(renderCell)}</View>
+      <View style={grid.row}>
+        {renderCell(10)}
+        <View style={{ width: CENTER_SIZE, height: CELL }}>{centerContent}</View>
+        {renderCell(3)}
+      </View>
+      <View style={grid.row}>
+        {renderCell(9)}
+        <View style={{ width: CENTER_SIZE, height: CELL }} />
+        {renderCell(4)}
+      </View>
+      <View style={grid.row}>{[8, 7, 6, 5].map(renderCell)}</View>
+    </View>
+  )
+}
+
+// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
+export function SouthIndianKundli({ chart }: { chart: VedicChart }) {
+  const [selectedCell, setSelectedCell] = useState<CellInfo | null>(null)
+
+  // Animations
+  const rotXAnim = useRef(new Animated.Value(0)).current
+  const rotYAnim = useRef(new Animated.Value(0)).current
+  const tiltMagnitude = useRef(new Animated.Value(0)).current
+  const haloRotAnim = useRef(new Animated.Value(0)).current
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(haloRotAnim, { toValue: 1, duration: 8000, useNativeDriver: true })
+    ).start()
+  }, [])
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderMove: (_, gs) => {
+        rotXAnim.setValue(-gs.dy / 12)
+        rotYAnim.setValue(gs.dx / 12)
+        tiltMagnitude.setValue(Math.sqrt(gs.dx * gs.dx + gs.dy * gs.dy))
+      },
+      onPanResponderRelease: () => {
+        Animated.parallel([
+          Animated.spring(rotXAnim, { toValue: 0, damping: 14, stiffness: 120, useNativeDriver: false }),
+          Animated.spring(rotYAnim, { toValue: 0, damping: 14, stiffness: 120, useNativeDriver: false }),
+          Animated.spring(tiltMagnitude, { toValue: 0, damping: 14, stiffness: 120, useNativeDriver: false }),
+        ]).start()
+      },
+    })
+  ).current
+
+  const rotXStr = rotXAnim.interpolate({ inputRange: [-25, 25], outputRange: ['-25deg', '25deg'] })
+  const rotYStr = rotYAnim.interpolate({ inputRange: [-25, 25], outputRange: ['-25deg', '25deg'] })
+  const shadowOpacity = tiltMagnitude.interpolate({ inputRange: [0, 50], outputRange: [0.15, 0.5], extrapolate: 'clamp' })
+  const specularLeft = rotYAnim.interpolate({ inputRange: [-25, 25], outputRange: ['-10%', '110%'] })
+  const haloRotation = haloRotAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] })
+
+  const lagnaRashiIdx = RASHI_NAMES.indexOf(chart.lagna)
+
+  const cells: GridCellData[] = Array.from({ length: 12 }, (_, rashiIdx) => {
+    const houseNum = ((rashiIdx - lagnaRashiIdx + 12) % 12) + 1
+    const natalGrahas = chart.grahas.filter(g => RASHI_NAMES.indexOf(g.rashi) === rashiIdx)
+    const isLagna = rashiIdx === lagnaRashiIdx
+    const isKendra = [1, 4, 7, 10].includes(houseNum)
+    const isTrikona = [1, 5, 9].includes(houseNum)
+    
+    const planets: GridPlanet[] = natalGrahas.map(g => {
+      const gi = GRAHA_INFO[g.name]
+      return {
+        name: g.name,
+        abbr: gi?.abbr ?? g.name.substring(0, 2),
+        color: gi?.color ?? '#FFF',
+        glyph: gi?.glyph ?? '●',
+        isRetrograde: g.isRetrograde,
+        isExalted: g.isExalted,
+        isDebilitated: g.isDebilitated,
+      }
+    })
+    return { rashiIdx, houseNum, planets, isLagna, isKendra, isTrikona }
+  })
+
+  function handleCellPress(cellData: GridCellData) {
+    const vedicGrahas = chart.grahas.filter(g => RASHI_NAMES.indexOf(g.rashi) === cellData.rashiIdx)
+    setSelectedCell({
+      ...cellData,
+      vedicGrahas,
+      lagnaSign: chart.lagna,
+      yogas: chart.yogas
+    })
+  }
+
+  return (
+    <View style={styles.wrapper}>
+      <Animated.View
+        style={[
+          styles.shadowWrap,
+          {
+            shadowOpacity,
+            transform: [
+              { perspective: 1400 },
+              { scale: 1.015 },
+              { rotateX: rotXStr },
+              { rotateY: rotYStr },
+            ],
+          },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        {/* Specular highlight stripe at rest top edge */}
+        <Animated.View style={[styles.specularHighlight, { left: specularLeft }]} />
+
+        {/* Outer Cosmic Frame (2px breathing ring) */}
+        <View style={styles.haloWrap}>
+          <Animated.View style={[styles.haloContainer, { transform: [{ rotate: haloRotation }] }]}>
+            <LinearGradient
+              colors={['#C9A84C', '#7B2FBE', '#2FBEBE', '#C9A84C']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={styles.haloInnerMask} />
+          </Animated.View>
+        </View>
+
+        <KundliGrid
+          cells={cells}
+          chartSize={CHART_SIZE}
+          centerContent={<CenterMandala size={CHART_SIZE / 2} yogas={chart.yogas} />}
+          onCellPress={handleCellPress}
+        />
+      </Animated.View>
+
+      <Text style={styles.dragHint}>Drag to tilt in space · Tap any house for its cosmic reading</Text>
+
+      <ChartOracleModal cell={selectedCell} onClose={() => setSelectedCell(null)} />
+    </View>
+  )
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  wrapper: { alignItems: 'center', paddingVertical: 16 },
+  shadowWrap: {
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#C9A84C',
+    shadowOffset: { width: 0, height: 16 },
+    shadowRadius: 32,
+    elevation: 20,
+    borderRadius: 4,
+    backgroundColor: '#050514', // Base backdrop behind chart
+  },
+  specularHighlight: {
+    position: 'absolute',
+    top: 0,
+    width: '100%',
+    height: 2,
+    backgroundColor: '#FFFFFF',
+    opacity: 0.1,
+    zIndex: 10,
+  },
+  haloWrap: {
+    position: 'absolute',
+    width: CHART_SIZE + 16,
+    height: CHART_SIZE + 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  haloContainer: {
+    width: CHART_SIZE + 16,
+    height: CHART_SIZE + 16,
+    borderRadius: 8,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  haloInnerMask: {
+    width: CHART_SIZE + 12,
+    height: CHART_SIZE + 12,
+    backgroundColor: '#050514', // Matches screen dark bg to mask gradient into a 2px ring
+    borderRadius: 6,
+  },
+  dragHint: {
+    fontFamily: 'CormorantGaramond_400Regular_Italic',
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.3)',
+    marginTop: 24,
+    letterSpacing: 0.3,
+  },
+})
+
+const gc = StyleSheet.create({
+  cell: {
+    overflow: 'hidden',
+    padding: 4,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    position: 'relative',
+  },
+  lagnaMark: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    fontFamily: 'CinzelDecorative', // Expecting this font loaded
+    fontSize: 8,
+    color: '#C9A84C',
+    opacity: 0.9,
+  },
+  cornerMark: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    fontFamily: 'Orbitron_400Regular',
+    fontSize: 7,
+  },
+  watermark: {
+    position: 'absolute',
+    fontSize: 28,
+    color: 'rgba(255,255,255,0.04)',
+    top: '50%',
+    transform: [{ translateY: -16 }],
+  },
+  houseNum: {
+    fontFamily: Fonts.accent,
+    fontSize: 9,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    marginTop: 2,
+  },
+  planetsStack: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 2,
+  },
+  planetChip: {
+    width: 22,
+    height: 22,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  retrogradeText: {
+    position: 'absolute',
+    top: -1,
+    right: 0,
+    fontSize: 6,
+    color: '#E8E8FF',
+    fontFamily: Fonts.accentBold,
+  }
+})
+
+const cm = StyleSheet.create({
+  wrap: { position: 'relative', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  content: { alignItems: 'center', zIndex: 2, pointerEvents: 'none' },
+  symbol: { fontSize: 16, color: '#C9A84C', marginBottom: 4 },
+  appName: { fontFamily: Fonts.heading, fontSize: 10, color: '#C9A84C', letterSpacing: 3 },
+  subText: { fontFamily: Fonts.accent, fontSize: 7, color: 'rgba(255,255,255,0.25)', letterSpacing: 1, marginTop: 4 },
+})
+
+const grid = StyleSheet.create({
+  container: { overflow: 'hidden', borderRadius: 6, zIndex: 5 },
+  row: { flexDirection: 'row' },
+})
 
 const dm = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)' },
@@ -151,6 +608,12 @@ const dm = StyleSheet.create({
   rashiText: { fontFamily: Fonts.heading, fontSize: 22, color: '#C9A84C', marginBottom: 4 },
   houseLabel: { fontFamily: Fonts.accent, fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: 1.5 },
   symbolText: { fontSize: 36, color: 'rgba(255,255,255,0.5)' },
+  contextBlock: {
+    backgroundColor: 'rgba(10,20,25,0.6)', borderRadius: 8, padding: 12, marginBottom: 20,
+    borderWidth: 1, borderColor: 'rgba(47,190,190,0.15)'
+  },
+  contextTitle: { fontFamily: Fonts.accentBold, fontSize: 9, color: '#2FBEBE', letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' },
+  contextString: { fontFamily: 'Courier', fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 16 },
   meaningCard: { backgroundColor: 'rgba(201,168,76,0.06)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(201,168,76,0.15)', padding: 16, marginBottom: 20 },
   meaningLabel: { fontFamily: Fonts.accent, fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 },
   meaningText: { fontFamily: Fonts.body, fontSize: 14, color: 'rgba(255,255,255,0.75)', lineHeight: 22 },
@@ -166,140 +629,4 @@ const dm = StyleSheet.create({
   emptySubText: { fontFamily: Fonts.body, fontSize: 13, color: 'rgba(255,255,255,0.35)', lineHeight: 20 },
   closeBtn: { margin: 20, marginTop: 8, paddingVertical: 14, alignItems: 'center', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' },
   closeText: { fontFamily: Fonts.accent, fontSize: 12, color: 'rgba(255,255,255,0.4)', letterSpacing: 1 },
-})
-
-// ─── MAIN COMPONENT ────────────────────────────────────────────────────────────
-export function SouthIndianKundli({ chart }: { chart: VedicChart }) {
-  const [selectedCell, setSelectedCell] = useState<CellInfo | null>(null)
-
-  // Built-in Animated values for 3-D tilt
-  const rotXAnim = useRef(new Animated.Value(0)).current
-  const rotYAnim = useRef(new Animated.Value(0)).current
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderMove: (_, gs) => {
-        rotXAnim.setValue(-gs.dy / 12)
-        rotYAnim.setValue(gs.dx / 12)
-      },
-      onPanResponderRelease: () => {
-        Animated.parallel([
-          Animated.spring(rotXAnim, { toValue: 0, damping: 14, stiffness: 120, useNativeDriver: false }),
-          Animated.spring(rotYAnim, { toValue: 0, damping: 14, stiffness: 120, useNativeDriver: false }),
-        ]).start()
-      },
-    })
-  ).current
-
-  // Interpolate numbers → deg strings for transform
-  const rotXStr = rotXAnim.interpolate({ inputRange: [-25, 25], outputRange: ['-25deg', '25deg'] })
-  const rotYStr = rotYAnim.interpolate({ inputRange: [-25, 25], outputRange: ['-25deg', '25deg'] })
-
-  // Build grid cells from chart data
-  const lagnaRashiIdx = RASHI_NAMES.indexOf(chart.lagna)
-
-  const cells: GridCellData[] = Array.from({ length: 12 }, (_, rashiIdx) => {
-    const houseNum = ((rashiIdx - lagnaRashiIdx + 12) % 12) + 1
-    const natalGrahas = chart.grahas.filter(g => RASHI_NAMES.indexOf(g.rashi) === rashiIdx)
-    const isLagna = rashiIdx === lagnaRashiIdx
-    const isKendra = [1, 4, 7, 10].includes(houseNum)
-    const isTrikona = [1, 5, 9].includes(houseNum)
-    const planets: GridPlanet[] = natalGrahas.map(g => {
-      const gi = GRAHA_INFO[g.name]
-      return {
-        abbr: gi?.abbr ?? g.name.substring(0, 2),
-        color: gi?.color ?? '#FFF',
-        isRetrograde: g.isRetrograde,
-        isExalted: g.isExalted,
-        isDebilitated: g.isDebilitated,
-      }
-    })
-    return { rashiIdx, houseNum, planets, isLagna, isKendra, isTrikona }
-  })
-
-  function handleCellPress(cell: GridCellData) {
-    const vedicGrahas = chart.grahas.filter(
-      g => RASHI_NAMES.indexOf(g.rashi) === cell.rashiIdx
-    )
-    setSelectedCell({
-      rashiIdx: cell.rashiIdx,
-      houseNum: cell.houseNum,
-      planets: vedicGrahas,
-      isLagna: cell.isLagna,
-      isKendra: cell.isKendra,
-      isTrikona: cell.isTrikona,
-    })
-  }
-
-  const center = (
-    <CenterMandala
-      size={CHART_SIZE / 2}
-      yogas={chart.yogas}
-    />
-  )
-
-  return (
-    <View style={styles.wrapper}>
-      <Animated.View
-        style={[
-          styles.shadowWrap,
-          {
-            transform: [
-              { perspective: 1100 },
-              { rotateX: rotXStr },
-              { rotateY: rotYStr },
-            ],
-          },
-        ]}
-        {...panResponder.panHandlers}
-      >
-        {/* Gold outer frame glow */}
-        <View style={[styles.outerFrame, { width: CHART_SIZE + 4, height: CHART_SIZE + 4 }]}>
-          <LinearGradient
-            colors={['rgba(201,168,76,0.6)', 'rgba(120,60,220,0.4)', 'rgba(201,168,76,0.6)']}
-            style={StyleSheet.absoluteFillObject}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          />
-        </View>
-
-        <KundliGrid
-          cells={cells}
-          chartSize={CHART_SIZE}
-          centerContent={center}
-          onCellPress={handleCellPress}
-        />
-      </Animated.View>
-
-      <Text style={styles.dragHint}>Drag to tilt · Tap any house for details</Text>
-
-      <CellDetailModal cell={selectedCell} onClose={() => setSelectedCell(null)} />
-    </View>
-  )
-}
-
-const styles = StyleSheet.create({
-  wrapper: { alignItems: 'center', paddingVertical: 8 },
-  shadowWrap: {
-    alignItems: 'center',
-    shadowColor: '#C9A84C',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.3,
-    shadowRadius: 24,
-    elevation: 20,
-  },
-  outerFrame: {
-    position: 'absolute',
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  dragHint: {
-    fontFamily: Fonts.body,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.2)',
-    marginTop: 14,
-    letterSpacing: 0.3,
-  },
 })
