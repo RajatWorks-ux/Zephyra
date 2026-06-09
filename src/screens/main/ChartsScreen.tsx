@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react'
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -10,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Haptics from 'expo-haptics'
 import { useReadingStore } from '../../store/readingStore'
 import { useSettingsStore } from '../../store/settingsStore'
+import { buildChartContext } from '../../services/nvidiaAI'
 import { Videos } from '../../constants/videos'
 import { Fonts } from '../../constants/fonts'
 import { SouthIndianKundli } from '../../components/charts/SouthIndianKundli'
@@ -52,6 +54,8 @@ export function ChartsScreen() {
 
   // Nakshatra segment tap → oracle modal
   function handleNakshatraOracle(nak: { name: string; lord: string; color: string; type: string }) {
+    const fullCtx = chartData ? buildChartContext(chartData) : ''
+    const isBirth = chartData?.vedic?.nakshatra === nak.name
     setOraclePayload({
       visible: true,
       title: nak.name,
@@ -59,12 +63,11 @@ export function ChartsScreen() {
       symbol: '☽',
       symbolColor: nak.color,
       accentColor: nak.color,
-      contextData: [
-        `Nakshatra: ${nak.name}`,
-        `Lord: ${nak.lord}`,
-        `Nature: ${nak.type}`,
-        chartData?.vedic?.nakshatra === nak.name ? 'This is your birth nakshatra' : '',
-      ].filter(Boolean).join(' — '),
+      contextData: `The user tapped on the ${nak.name} Nakshatra (lord: ${nak.lord}, nature: ${nak.type})${isBirth ? ' — THIS IS THEIR BIRTH NAKSHATRA (Moon is placed here)' : ''}.
+
+Explain what ${nak.name} Nakshatra means specifically for this person — how does it manifest in their life RIGHT NOW given their current age, active Dasha period, and full natal chart? Show the EFFECTS on their real life. Give specific Vedic remedies.
+
+${fullCtx}`,
     })
   }
 
@@ -78,6 +81,7 @@ export function ChartsScreen() {
     Guru: '#FFD700', Shukra: '#FF80AA', Shani: '#8BA0C0', Rahu: '#9090BB', Ketu: '#B87840',
   }
   function handleGrahaOracle(ctx: Record<string, any>) {
+    const fullCtx = chartData ? buildChartContext(chartData) : ''
     setOraclePayload({
       visible: true,
       title: ctx.planet ?? 'Graha',
@@ -85,16 +89,11 @@ export function ChartsScreen() {
       symbol: GRAHA_SYMBOL[ctx.planet] ?? '◉',
       symbolColor: GRAHA_COLOR[ctx.planet] ?? '#C9A84C',
       accentColor: GRAHA_COLOR[ctx.planet] ?? '#C9A84C',
-      contextData: [
-        `Planet: ${ctx.planet}`,
-        `Rashi: ${ctx.rashi}`,
-        `House: ${ctx.house}`,
-        `Nakshatra: ${ctx.nakshatra}`,
-        `Strength: ${ctx.strength}/100`,
-        `Status: ${ctx.status}`,
-        `Retrograde: ${ctx.isRetrograde}`,
-        `Lagna: ${ctx.lagna}`,
-      ].filter(Boolean).join(' — '),
+      contextData: `The user tapped on ${ctx.planet} (placed in ${ctx.rashi}, House ${ctx.house}, Nakshatra ${ctx.nakshatra}). Strength: ${ctx.strength}/100. Status: ${ctx.status}. Retrograde: ${ctx.isRetrograde}.
+
+Explain what ${ctx.planet} in ${ctx.rashi} in House ${ctx.house} means specifically for THIS person — how is it manifesting in their life RIGHT NOW at their current age and active Dasha? What are the REAL-LIFE EFFECTS on their career, relationships, health, finances? Give specific Vedic remedies for strengthening or pacifying this planet.
+
+${fullCtx}`,
     })
   }
 
@@ -107,31 +106,34 @@ export function ChartsScreen() {
     let symbolColor = '#2FBEBE'
     let contextData = ''
 
+    const fullCtx = chartData ? buildChartContext(chartData) : ''
+
     if (ctx.title) {
       // Cell tap: { title, rashi, natalPlanets, transitingPlanetsNow, transitType, effects, currentMahadasha }
       title = ctx.title
       subtitle = ctx.rashi ? `${ctx.rashi} — Transit Analysis` : 'Transit Analysis'
-      contextData = [
-        ctx.title,
-        ctx.rashi               ? `Rashi: ${ctx.rashi}` : '',
-        ctx.natalPlanets        ? `Natal planets: ${ctx.natalPlanets}` : '',
-        ctx.transitingPlanetsNow ? `Transiting now: ${ctx.transitingPlanetsNow}` : '',
-        ctx.transitType         ? `Transit type: ${ctx.transitType}` : '',
-        ctx.effects             ? ctx.effects : '',
-        ctx.currentMahadasha    ? `Current Mahadasha: ${ctx.currentMahadasha}` : '',
-      ].filter(Boolean).join(' — ')
+      contextData = `The user tapped on the Gochar (transit) cell: ${ctx.title}.
+Rashi: ${ctx.rashi ?? 'unknown'}. Natal planets here: ${ctx.natalPlanets ?? 'none'}. Currently transiting: ${ctx.transitingPlanetsNow ?? 'none'}. Transit type: ${ctx.transitType ?? 'unknown'}.
+
+Explain what this specific transit means for THIS person right now — considering their natal chart, current Mahadasha/Antardasha, and age. What are the REAL-LIFE EFFECTS of these planets transiting this house? How is this affecting their career, relationships, health, finances TODAY? Give specific Vedic remedies.
+
+${fullCtx}`
     } else if (ctx.context === 'Condition Insight') {
       // Severity tile tap: { context, description }
       title = 'Transit Condition'
       subtitle = 'Gochar Effect'
       symbol = '⚡'
       symbolColor = '#C9A84C'
-      contextData = ctx.description ?? 'Transit condition insight'
+      contextData = `${ctx.description ?? 'Transit condition insight'}
+
+Explain what this transit condition means specifically for this person right now and its REAL-LIFE EFFECTS. Give specific Vedic remedies.
+
+${fullCtx}`
     } else {
-      // Fallback: stringify whatever was passed
-      contextData = Object.entries(ctx)
-        .map(([k, v]) => `${k}: ${v}`)
-        .join(' — ')
+      // Fallback
+      contextData = `${Object.entries(ctx).map(([k, v]) => `${k}: ${v}`).join(' — ')}
+
+${fullCtx}`
     }
 
     setOraclePayload({ visible: true, title, subtitle, symbol, symbolColor, accentColor: symbolColor === '#C9A84C' ? '#C9A84C' : '#2FBEBE', contextData })
