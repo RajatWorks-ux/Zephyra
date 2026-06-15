@@ -12,8 +12,8 @@
 // 4. Click "Databases" in left sidebar → your database ID is shown there
 
 export const APPWRITE_ENDPOINT = 'https://cloud.appwrite.io/v1'  // Always this for Appwrite Cloud
-export const APPWRITE_PROJECT_ID = 'YOUR_PROJECT_ID_HERE'        // ← FILL THIS IN (e.g. "6847abc123")
-export const APPWRITE_DATABASE_ID = 'YOUR_DATABASE_ID_HERE'      // ← FILL THIS IN (e.g. "ZephyraDB")
+export const APPWRITE_PROJECT_ID = '6a2fb15a0023709bf5ed'        // ← FILL THIS IN (e.g. "6847abc123")
+export const APPWRITE_DATABASE_ID = '6a2fb24b0001e2125615'      // ← FILL THIS IN (e.g. "ZephyraDB")
 export const APPWRITE_STORAGE_BUCKET_ID = 'avatars'              // ← optional, for profile pictures
 
 // ── Check if configured ───────────────────────────────────────────────────────
