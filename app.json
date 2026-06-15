@@ -3,7 +3,7 @@
     "name": "Zephyra",
     "slug": "zephyra",
     "newArchEnabled": false,
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
@@ -23,15 +23,27 @@
         "RECEIVE_SMS",
         "READ_SMS",
         "CAMERA",
-        "READ_MEDIA_IMAGES"
+        "READ_MEDIA_IMAGES",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
       ]
+    },
+    "ios": {
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Used to protect your admin access"
+      }
     },
     "plugins": [
       "expo-font",
-      ["expo-splash-screen", {
-        "backgroundColor": "#05050F"
-      }],
-      "expo-background-fetch"
-    ]
+      ["expo-splash-screen", { "backgroundColor": "#05050F" }],
+      "expo-background-fetch",
+      "expo-secure-store",
+      "expo-local-authentication"
+    ],
+    "extra": {
+      "EXPO_PUBLIC_APP_VERSION": "2.0.0",
+      "EXPO_PUBLIC_GROQ_BASE_URL": "https://api.groq.com/openai/v1",
+      "EXPO_PUBLIC_NVIDIA_TTS_BASE_URL": "https://integrate.api.nvidia.com/v1"
+    }
   }
 }
