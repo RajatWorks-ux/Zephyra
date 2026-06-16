@@ -1,13 +1,4 @@
-// src/navigation/RootNavigator.tsx
-// ─────────────────────────────────────────────────────────────────────────────
-// PHASE 2: New routing priority
-// 1. Setup not complete → ApiSetupWizard (GROQ keys entry)
-// 2. Password recovery → AuthNavigator
-// 3. No session → AuthNavigator
-// 4. Session but no birth profile → SetupNavigator
-// 5. Session + birth profile → MainNavigator
-// ─────────────────────────────────────────────────────────────────────────────
-
+// src/navigation/RootNavigator.tsx — PHASE 2 — Supabase
 import React, { useEffect } from 'react'
 import { View, ActivityIndicator } from 'react-native'
 import { useAuthStore } from '../store/authStore'
@@ -19,14 +10,14 @@ import { SetupApiNavigator } from './SetupApiNavigator'
 import { Colors } from '../constants/colors'
 
 export function RootNavigator() {
-  const { session, birthProfile, isLoading, isInitialized, isPasswordRecovery } = useAuthStore()
+  const { session, birthProfile, isLoading, isInitialized, isPasswordRecovery, initialize } = useAuthStore()
   const { isSetupComplete, isInitialized: setupInitialized, initialize: initSetup } = useSetupStore()
 
   useEffect(() => {
     initSetup()
+    initialize()
   }, [])
 
-  // Wait for both auth and setup stores to initialize
   if (isLoading || !isInitialized || !setupInitialized) {
     return (
       <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' }}>
@@ -35,26 +26,19 @@ export function RootNavigator() {
     )
   }
 
-  // Priority 1: API keys not set up yet → show 3-step wizard
-  if (!isSetupComplete) {
-    return <SetupApiNavigator />
-  }
+  // 1. GROQ API keys not set up yet → 3-step wizard
+  if (!isSetupComplete) return <SetupApiNavigator />
 
-  // Priority 2: Password recovery link clicked
-  if (isPasswordRecovery) {
-    return <AuthNavigator />
-  }
+  // 2. Password recovery link clicked
+  if (isPasswordRecovery) return <AuthNavigator />
 
-  // Priority 3: Not logged in
-  if (!session) {
-    return <AuthNavigator />
-  }
+  // 3. Not signed in
+  if (!session) return <AuthNavigator />
 
-  // Priority 4: Logged in but no birth profile → collect birth details
-  if (!birthProfile) {
-    return <SetupNavigator />
-  }
+  // 4. Signed in but no birth details yet
+  if (!birthProfile) return <SetupNavigator />
 
-  // Priority 5: Fully set up → main app
+  // 5. Fully set up
   return <MainNavigator />
 }
+
