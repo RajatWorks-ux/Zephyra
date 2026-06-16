@@ -147,3 +147,4 @@ export async function testAppwriteConnection(
     return { valid: false, error: 'Cannot reach endpoint — check URL' }
   }
 }
+
