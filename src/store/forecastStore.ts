@@ -410,4 +410,5 @@ function getFavorablePlanets(lagna: string): string[] {
     Meena: ['Moon', 'Mars', 'Jupiter'],
   }
   return map[lagna] ?? ['Jupiter', 'Mercury', 'Venus']
-}
+            }
+        
