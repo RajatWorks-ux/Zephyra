@@ -90,3 +90,4 @@ export const useSetupStore = create<SetupStore>((set, get) => ({
   setAppwriteConnected: (v) => set({ appwriteConnected: v }),
   setR2Connected: (v) => set({ r2Connected: v }),
 }))
+
