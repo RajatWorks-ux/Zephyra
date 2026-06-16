@@ -1,148 +1,89 @@
+
 // src/store/authStore.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// PHASE 2: Migrated from Supabase to Appwrite
-// SKIP_LOGIN = true for development (hardcoded mock user)
-// Set SKIP_LOGIN = false when Appwrite is configured and ready
-// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 2 — Back on Supabase (new project)
+// SKIP_LOGIN = true → development mode (no real auth needed)
+// SKIP_LOGIN = false → real Supabase auth
 
 import { create } from 'zustand'
+import { supabase, getBirthProfile, getUserProfile } from '../services/supabase'
 import { useReadingStore } from './readingStore'
 
-// ── Toggle this to bypass login during development ────────────────────────────
-const SKIP_LOGIN = true
+const SKIP_LOGIN = true  // ← set false when ready to test real auth
 
-// ── Mock data for development (fill in your real birth details) ───────────────
 const MOCK_BIRTH_PROFILE = {
-  id:               'mock-birth-001',
-  user_id:          'mock-user-001',
-  birth_date:       '2010-03-03',
-  birth_time:       '23:55:00',
-  birth_time_known: true,
-  birth_city:       'Chandigarh',
-  birth_country:    'India',
-  birth_lat:        30.7333,
-  birth_lng:        76.7794,
-  timezone:         'Asia/Kolkata',
-  created_at:       new Date().toISOString(),
+  id: 'mock-birth-001', user_id: 'mock-user-001',
+  birth_date: '2010-03-03', birth_time: '23:55:00', birth_time_known: true,
+  birth_city: 'Chandigarh', birth_country: 'India',
+  birth_lat: 30.7333, birth_lng: 76.7794, timezone: 'Asia/Kolkata',
+  created_at: new Date().toISOString(),
 }
+const MOCK_PROFILE = { id: 'mock-user-001', display_name: 'Zephyra Dev User', avatar_url: null, auth_provider: 'mock' }
+const MOCK_SESSION = { user: { id: 'mock-user-001', email: 'dev@zephyra.app' }, access_token: 'mock-token' }
 
-const MOCK_PROFILE = {
-  id:            'mock-user-001',
-  display_name:  'Zephyra Dev User',
-  avatar_url:    null,
-  auth_provider: 'mock',
-}
-
-const MOCK_SESSION = {
-  user: { id: 'mock-user-001', email: 'dev@zephyra.app' },
-  access_token: 'mock-token',
-  token_type: 'bearer',
-  expires_in: 999999,
-  refresh_token: 'mock-refresh',
-}
-
-// ── Types ─────────────────────────────────────────────────────────────────────
 interface Profile {
-  id: string
-  display_name: string | null
-  avatar_url: string | null
-  auth_provider: string | null
+  id: string; display_name: string | null; avatar_url: string | null; auth_provider: string | null
 }
-
 interface BirthProfile {
-  id: string
-  user_id: string
-  birth_date: string | null
-  birth_time: string | null
-  birth_time_known: boolean
-  birth_city: string | null
-  birth_country: string | null
-  birth_lat: number | null
-  birth_lng: number | null
-  timezone: string | null
-  created_at: string
+  id: string; user_id: string; birth_date: string | null; birth_time: string | null
+  birth_time_known: boolean; birth_city: string | null; birth_country: string | null
+  birth_lat: number | null; birth_lng: number | null; timezone: string | null; created_at: string
 }
-
 interface AuthState {
-  session: any | null
-  profile: Profile | null
-  birthProfile: BirthProfile | null
-  isLoading: boolean
-  isInitialized: boolean
-  isPasswordRecovery: boolean
-  // polling interval ref for session check
-  _pollingInterval: ReturnType<typeof setInterval> | null
-
-  initialize: () => Promise<void>
-  signOut: () => Promise<void>
-  refreshBirthProfile: () => Promise<void>
-  clearRecovery: () => void
+  session: any | null; profile: Profile | null; birthProfile: BirthProfile | null
+  isLoading: boolean; isInitialized: boolean; isPasswordRecovery: boolean
+  initialize: () => Promise<void>; signOut: () => Promise<void>
+  refreshBirthProfile: () => Promise<void>; clearRecovery: () => void
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  session: null,
-  profile: null,
-  birthProfile: null,
-  isLoading: true,
-  isInitialized: false,
-  isPasswordRecovery: false,
-  _pollingInterval: null,
+  session: null, profile: null, birthProfile: null,
+  isLoading: true, isInitialized: false, isPasswordRecovery: false,
 
   initialize: async () => {
-    // ── SKIP_LOGIN mode (development) ─────────────────────────────────────────
     if (SKIP_LOGIN) {
-      set({
-        session: MOCK_SESSION,
-        profile: MOCK_PROFILE,
-        birthProfile: MOCK_BIRTH_PROFILE,
-        isLoading: false,
-        isInitialized: true,
-        isPasswordRecovery: false,
-      })
+      set({ session: MOCK_SESSION, profile: MOCK_PROFILE, birthProfile: MOCK_BIRTH_PROFILE, isLoading: false, isInitialized: true })
       return
     }
-
-    // ── Real Appwrite auth ────────────────────────────────────────────────────
     try {
-      const { getSession, getUser, getBirthProfile, getUserProfile } = await import('../services/appwriteService')
+      const { data: { session } } = await supabase.auth.getSession()
 
-      const session = await getSession()
-      if (session) {
-        const [user, birthProfile] = await Promise.all([
-          getUser(),
-          getBirthProfile(session.userId),
+      if (session?.user) {
+        const [profileRes, birthRes] = await Promise.all([
+          getUserProfile(session.user.id),
+          getBirthProfile(session.user.id),
         ])
-        const profile = user ? await getUserProfile(user.$id).catch(() => null) : null
-
         set({
           session,
-          profile: profile ? {
-            id: user!.$id,
-            display_name: profile.display_name ?? user?.name ?? null,
-            avatar_url: profile.avatar_url ?? null,
-            auth_provider: profile.auth_provider ?? 'email',
-          } : null,
-          birthProfile: birthProfile as BirthProfile | null,
-          isLoading: false,
-          isInitialized: true,
-          isPasswordRecovery: false,
+          profile: profileRes.data ? { id: session.user.id, display_name: profileRes.data.display_name ?? null, avatar_url: profileRes.data.avatar_url ?? null, auth_provider: profileRes.data.auth_provider ?? 'email' } : null,
+          birthProfile: birthRes.data ?? null,
+          isLoading: false, isInitialized: true, isPasswordRecovery: false,
         })
-
-        // ── Start 30s polling to detect session expiry ─────────────────────────
-        // (Appwrite has no onAuthStateChange — we poll instead)
-        const interval = setInterval(async () => {
-          try {
-            await getSession()
-          } catch {
-            // 401 = session expired → sign out
-            clearInterval(interval)
-            set({ session: null, profile: null, birthProfile: null, _pollingInterval: null })
-          }
-        }, 30000)
-        set({ _pollingInterval: interval })
       } else {
         set({ session: null, profile: null, birthProfile: null, isLoading: false, isInitialized: true })
       }
+
+      // Listen for auth state changes (Supabase built-in — no polling needed)
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          set({ isPasswordRecovery: true, session })
+          return
+        }
+        if (event === 'SIGNED_OUT' || !session) {
+          set({ session: null, profile: null, birthProfile: null, isPasswordRecovery: false })
+          return
+        }
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          const [profileRes, birthRes] = await Promise.all([
+            getUserProfile(session.user.id),
+            getBirthProfile(session.user.id),
+          ])
+          set({
+            session,
+            profile: profileRes.data ? { id: session.user.id, display_name: profileRes.data.display_name ?? null, avatar_url: profileRes.data.avatar_url ?? null, auth_provider: profileRes.data.auth_provider ?? 'email' } : null,
+            birthProfile: birthRes.data ?? null,
+          })
+        }
+      })
     } catch (e: any) {
       console.error('[AuthStore] initialize error:', e.message)
       set({ isLoading: false, isInitialized: true })
@@ -155,29 +96,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ session: MOCK_SESSION, profile: MOCK_PROFILE, birthProfile: MOCK_BIRTH_PROFILE })
       return
     }
-    // Stop polling
-    const { _pollingInterval } = get()
-    if (_pollingInterval) clearInterval(_pollingInterval)
-
     set({ isLoading: true })
     useReadingStore.getState().reset()
-
-    try {
-      const { signOut } = await import('../services/appwriteService')
-      await signOut()
-    } catch {}
-    set({ session: null, profile: null, birthProfile: null, isLoading: false, _pollingInterval: null })
+    await supabase.auth.signOut()
+    set({ session: null, profile: null, birthProfile: null, isLoading: false })
   },
 
   refreshBirthProfile: async () => {
     if (SKIP_LOGIN) return
     const { session } = get()
-    if (!session) return
-    try {
-      const { getBirthProfile } = await import('../services/appwriteService')
-      const birthProfile = await getBirthProfile(session.userId)
-      set({ birthProfile: birthProfile as BirthProfile | null })
-    } catch {}
+    if (!session?.user) return
+    const { data } = await getBirthProfile(session.user.id)
+    set({ birthProfile: data ?? null })
   },
 
   clearRecovery: () => set({ isPasswordRecovery: false }),
