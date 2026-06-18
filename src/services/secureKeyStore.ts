@@ -148,3 +148,44 @@ export async function testAppwriteConnection(
   }
 }
 
+
+// ── Cloud-backed key set (saves to SecureStore + Supabase simultaneously) ─────
+// Use this instead of setKey() for GROQ keys so they survive reinstall.
+export async function setGroqKeysWithBackup(
+  userId: string,
+  key1: string,
+  key2: string,
+): Promise<void> {
+  // Always save locally first (instant)
+  await Promise.all([
+    setKey(KEY_GROQ_1, key1),
+    setKey(KEY_GROQ_2, key2),
+  ])
+  // Async cloud backup (non-blocking — never delay the user)
+  import('../services/supabase').then(({ backupApiKeysToCloud }) => {
+    backupApiKeysToCloud(userId, key1, key2).catch(() => {})
+  })
+}
+
+// ── Restore GROQ keys from cloud if local store is empty ──────────────────────
+// Called once on app init after auth. Returns true if keys were restored.
+export async function restoreGroqKeysIfNeeded(userId: string): Promise<boolean> {
+  const existing = await getKey(KEY_GROQ_1)
+  if (existing && existing.startsWith('gsk_')) return false // already have keys
+
+  try {
+    const { restoreApiKeysFromCloud } = await import('../services/supabase')
+    const restored = await restoreApiKeysFromCloud(userId)
+    if (restored?.key1) {
+      await setKey(KEY_GROQ_1, restored.key1)
+      if (restored.key2) await setKey(KEY_GROQ_2, restored.key2)
+      await setKey(KEY_SETUP_COMPLETE, 'true')
+      console.log('[Zephyra] ✓ API keys restored from cloud backup')
+      return true
+    }
+  } catch (e) {
+    console.warn('[Zephyra] Cloud key restore failed:', e)
+  }
+  return false
+}
+
