@@ -8,7 +8,7 @@ import { create } from 'zustand'
 import { supabase, getBirthProfile, getUserProfile } from '../services/supabase'
 import { useReadingStore } from './readingStore'
 
-const SKIP_LOGIN = true  // ← set false when ready to test real auth
+const SKIP_LOGIN = false  // ← set false when ready to test real auth
 
 const MOCK_BIRTH_PROFILE = {
   id: 'mock-birth-001', user_id: 'mock-user-001',
@@ -58,6 +58,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           birthProfile: birthRes.data ?? null,
           isLoading: false, isInitialized: true, isPasswordRecovery: false,
         })
+        // Cloud key restore — silently recovers keys after reinstall
+        import('../services/secureKeyStore').then(({ restoreGroqKeysIfNeeded }) => {
+          restoreGroqKeysIfNeeded(session.user.id).then(restored => {
+            if (restored) {
+              // Keys were restored — trigger setupStore re-init
+              import('../store/setupStore').then(({ useSetupStore }) => {
+                useSetupStore.getState().initialize()
+              })
+            }
+          })
+        })
       } else {
         set({ session: null, profile: null, birthProfile: null, isLoading: false, isInitialized: true })
       }
@@ -81,6 +92,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             session,
             profile: profileRes.data ? { id: session.user.id, display_name: profileRes.data.display_name ?? null, avatar_url: profileRes.data.avatar_url ?? null, auth_provider: profileRes.data.auth_provider ?? 'email' } : null,
             birthProfile: birthRes.data ?? null,
+          })
+          // Cloud key restore on sign-in (handles reinstall scenario)
+          import('../services/secureKeyStore').then(({ restoreGroqKeysIfNeeded }) => {
+            restoreGroqKeysIfNeeded(session.user.id).then(restored => {
+              if (restored) {
+                import('../store/setupStore').then(({ useSetupStore }) => {
+                  useSetupStore.getState().initialize()
+                })
+              }
+            })
           })
         }
       })
@@ -112,3 +133,4 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearRecovery: () => set({ isPasswordRecovery: false }),
 }))
+          
