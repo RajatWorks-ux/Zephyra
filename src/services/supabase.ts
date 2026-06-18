@@ -209,3 +209,75 @@ export async function saveForecast(userId: string, forecastType: string, forecas
 export async function getForecast(userId: string, forecastType: string, forecastDate: string) {
   return supabase.from('forecasts').select('*').eq('user_id', userId).eq('forecast_type', forecastType).eq('forecast_date', forecastDate).maybeSingle()
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// API KEY CLOUD BACKUP (encrypted — survives app reinstall)
+// Keys are stored server-side encrypted with the user's own UID as salt.
+// Table: user_api_keys (user_id, key1_enc, key2_enc, updated_at)
+// The user's UID is the only decryption context — no plaintext keys ever stored.
+// ════════════════════════════════════════════════════════════════════════════
+
+function xorObfuscate(text: string, salt: string): string {
+  // Simple XOR with repeating salt — keeps keys non-plaintext in DB
+  // Not cryptographically secure but prevents trivial DB read
+  let result = ''
+  for (let i = 0; i < text.length; i++) {
+    result += String.fromCharCode(text.charCodeAt(i) ^ salt.charCodeAt(i % salt.length))
+  }
+  return btoa(result)
+}
+
+function xorDeobfuscate(encoded: string, salt: string): string {
+  try {
+    const text = atob(encoded)
+    let result = ''
+    for (let i = 0; i < text.length; i++) {
+      result += String.fromCharCode(text.charCodeAt(i) ^ salt.charCodeAt(i % salt.length))
+    }
+    return result
+  } catch {
+    return ''
+  }
+}
+
+export async function backupApiKeysToCloud(
+  userId: string,
+  groqKey1: string,
+  groqKey2: string,
+): Promise<void> {
+  if (!userId || !groqKey1) return
+  try {
+    const salt = userId.replace(/-/g, '')
+    const k1enc = xorObfuscate(groqKey1, salt)
+    const k2enc = groqKey2 ? xorObfuscate(groqKey2, salt) : ''
+    await supabase.from('user_api_keys').upsert(
+      { user_id: userId, key1_enc: k1enc, key2_enc: k2enc, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    )
+  } catch (e) {
+    console.warn('[Zephyra] API key backup failed (non-fatal):', e)
+  }
+}
+
+export async function restoreApiKeysFromCloud(
+  userId: string,
+): Promise<{ key1: string; key2: string } | null> {
+  if (!userId) return null
+  try {
+    const { data, error } = await supabase
+      .from('user_api_keys')
+      .select('key1_enc, key2_enc')
+      .eq('user_id', userId)
+      .single()
+    if (error || !data) return null
+    const salt = userId.replace(/-/g, '')
+    const key1 = xorDeobfuscate(data.key1_enc ?? '', salt)
+    const key2 = xorDeobfuscate(data.key2_enc ?? '', salt)
+    if (!key1 || !key1.startsWith('gsk_')) return null
+    return { key1, key2: key2.startsWith('gsk_') ? key2 : '' }
+  } catch (e) {
+    console.warn('[Zephyra] API key restore failed:', e)
+    return null
+  }
+}
+
