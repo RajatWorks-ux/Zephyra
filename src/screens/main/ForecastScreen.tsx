@@ -515,7 +515,6 @@ export function ForecastScreen() {
   )
 }
 
-import { StyleSheet } from 'react-native'
 const CELL_SIZE = Math.floor((width - 40 - 6 * 6) / 7)
 
 const styles = StyleSheet.create({
