@@ -125,6 +125,11 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
 
     set({ isLoading: true, hasError: false })
     try {
+      if (!birthProfile?.birth_date || !birthProfile?.birth_lat) {
+        console.error('[STORE] birthProfile incomplete — aborting initialize')
+        set({ isLoading: false, hasError: true })
+        return
+      }
       const chartData = calculateChartData(birthProfile)
       const astrologyScore = getDailyScore(chartData)
       const userAge = computeAge(birthProfile.birth_date)
@@ -163,7 +168,7 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
           await AsyncStorage.setItem(localReadingKey(userId), existingReading.full_reading_text).catch(() => {})
           const localRefreshTs = await AsyncStorage.getItem(localLastRefreshKey(userId)).catch(() => null)
           const bestTs = mostRecentTimestamp((existingReading as any).updated_at ?? existingReading.created_at, localRefreshTs)
-          set({ reading: parsed, readingSeed: existingReading.reading_seed ?? null, currentLanguageCode: existingReading.reading_language ?? 'en-US', dailyScore: astrologyScore, isLoading: false, chaptersDone: 5, lastRefreshedAt: bestTs })
+          set({ reading: parsed, readingSeed: (existingReading.reading_seed && typeof existingReading.reading_seed === 'object') ? existingReading.reading_seed : null, currentLanguageCode: existingReading.reading_language ?? 'en-US', dailyScore: astrologyScore, isLoading: false, chaptersDone: 5, lastRefreshedAt: bestTs })
           if (isStaleTimestamp(bestTs) || shouldRefreshAt7AM(bestTs)) setTimeout(() => get().silentRefresh(userId, birthProfile), 1000)
           if (antardashaChanged) get().silentRefresh(userId, birthProfile)
           get().startAstroPolling(userId, birthProfile)
@@ -266,3 +271,4 @@ export const useReadingStore = create<ReadingState>((set, get) => ({
     set({ chartData: null, reading: null, readingSeed: null, dailyScore: 0, isLoading: false, isGenerating: false, isRegenerating: false, hasError: false, generationStatus: '', generationProgress: 0, chaptersDone: 0, parallelOraclesActive: 0, currentLanguageCode: 'en-US', currentLanguage: null, currentUserId: null, silentlyRefreshing: false, lastRefreshedAt: null, lastAstroRefreshAt: null, appStateSubscription: null })
   },
 }))
+             
