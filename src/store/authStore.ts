@@ -8,7 +8,7 @@ import { create } from 'zustand'
 import { supabase, getBirthProfile, getUserProfile } from '../services/supabase'
 import { useReadingStore } from './readingStore'
 
-const SKIP_LOGIN = false  // ← set false when ready to test real auth
+const SKIP_LOGIN = true  // ← set false when ready to test real auth
 
 const MOCK_BIRTH_PROFILE = {
   id: 'mock-birth-001', user_id: 'mock-user-001',
