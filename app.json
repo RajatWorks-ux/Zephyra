@@ -35,8 +35,9 @@
     ],
     "extra": {
       "EXPO_PUBLIC_APP_VERSION": "2.0.0",
-      "EXPO_PUBLIC_GROQ_BASE_URL": "https://api.groq.com/openai/v1",
+      "EXPO_PUBLIC_OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
       "EXPO_PUBLIC_NVIDIA_TTS_BASE_URL": "https://integrate.api.nvidia.com/v1"
     }
   }
 }
+
