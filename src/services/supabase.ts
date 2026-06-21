@@ -242,16 +242,16 @@ function xorDeobfuscate(encoded: string, salt: string): string {
 
 export async function backupApiKeysToCloud(
   userId: string,
-  groqKey1: string,
-  groqKey2: string,
+  openRouterKey: string,
 ): Promise<void> {
-  if (!userId || !groqKey1) return
+  if (!userId || !openRouterKey) return
   try {
     const salt = userId.replace(/-/g, '')
-    const k1enc = xorObfuscate(groqKey1, salt)
-    const k2enc = groqKey2 ? xorObfuscate(groqKey2, salt) : ''
+    const k1enc = xorObfuscate(openRouterKey, salt)
+    // key2_enc column kept empty — single-key OpenRouter setup no longer
+    // needs a second key. Column left in place so no DB migration is needed.
     await supabase.from('user_api_keys').upsert(
-      { user_id: userId, key1_enc: k1enc, key2_enc: k2enc, updated_at: new Date().toISOString() },
+      { user_id: userId, key1_enc: k1enc, key2_enc: '', updated_at: new Date().toISOString() },
       { onConflict: 'user_id' },
     )
   } catch (e) {
@@ -261,20 +261,19 @@ export async function backupApiKeysToCloud(
 
 export async function restoreApiKeysFromCloud(
   userId: string,
-): Promise<{ key1: string; key2: string } | null> {
+): Promise<{ key: string } | null> {
   if (!userId) return null
   try {
     const { data, error } = await supabase
       .from('user_api_keys')
-      .select('key1_enc, key2_enc')
+      .select('key1_enc')
       .eq('user_id', userId)
       .single()
     if (error || !data) return null
     const salt = userId.replace(/-/g, '')
-    const key1 = xorDeobfuscate(data.key1_enc ?? '', salt)
-    const key2 = xorDeobfuscate(data.key2_enc ?? '', salt)
-    if (!key1 || !key1.startsWith('gsk_')) return null
-    return { key1, key2: key2.startsWith('gsk_') ? key2 : '' }
+    const key = xorDeobfuscate(data.key1_enc ?? '', salt)
+    if (!key || !key.startsWith('sk-or-')) return null
+    return { key }
   } catch (e) {
     console.warn('[Zephyra] API key restore failed:', e)
     return null
