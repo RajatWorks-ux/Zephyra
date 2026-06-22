@@ -4,7 +4,7 @@
 // PHASE 3: Infrastructure changed: GROQ (2 keys, direct) → OpenRouter (1 key)
 // PHASE 4: Infrastructure changed: OpenRouter → NVIDIA NIM (1 key, 1 model)
 //   Single user-supplied NVIDIA API key (nvapi-...), single model:
-//   nvidia/nemotron-3-ultra-550b-a55b, called via the OpenAI-compatible
+//   moonshotai/kimi-k2.6, called via the OpenAI-compatible
 //   /v1/chat/completions endpoint at https://integrate.api.nvidia.com/v1.
 //   This is the ONLY text-generation model used anywhere in the app — every
 //   reading chunk, the chat screen, chart-insight popups, and forecasts all
@@ -20,50 +20,16 @@ import { getKey, KEY_OPENROUTER } from './secureKeyStore'
 import { runQueued, fetchGroqWithBackoff } from './groqQueue'
 
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1'
-// PHASE 5: Upgraded from nemotron-3-super-120b-a12b → nemotron-3-ultra-550b-a55b.
-//   Ultra shipped June 4, 2026 as NVIDIA's new flagship: 550B total params,
-//   55B active per token (vs Super's 12B active) — more active capacity for
-//   the same hybrid Mamba-Transformer MoE family, so reasoning/instruction-
-//   following quality on the Vedic system prompt below should be stronger,
-//   while NVIDIA's own MoE efficiency (Latent MoE — 4 experts at the
-//   inference cost of 1 — plus Multi-Token Prediction) keeps per-token
-//   generation fast despite the larger total size. Same request shape as
-//   Super: same OpenAI-compatible endpoint, same extra_body reasoning
-//   controls (chat_template_kwargs.enable_thinking + reasoning_budget) — a
-//   pure model-string swap, nothing else in this file needed to change.
-const NVIDIA_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b'
+// PHASE 6: Switched from nvidia/nemotron-3-ultra-550b-a55b → moonshotai/kimi-k2.6.
+//   Kimi K2.6 is a frontier MoE model from Moonshot AI hosted on NVIDIA NIM,
+//   delivered via the same OpenAI-compatible endpoint. It does NOT use
+//   Nemotron-style reasoning controls (extra_body / enable_thinking /
+//   reasoning_budget) — those parameters are omitted. Request shape uses
+//   max_tokens: 16384, temperature: 1.00, top_p: 1.00 per the NVIDIA example.
+const NVIDIA_MODEL = 'moonshotai/kimi-k2.6'
 const NVIDIA_HEADERS = {
   'HTTP-Referer': 'https://zephyra.app',
   'X-Title': 'Zephyra',
-}
-
-// ── Nemotron reasoning controls ───────────────────────────────────────────────
-// Nemotron-3-Ultra is a hybrid reasoning model — it can emit a separate
-// `reasoning_content` stream (its internal "thinking") alongside the normal
-// `content` stream. We keep thinking ON for every call because it measurably
-// improves adherence to the Iron Law of Specificity / verification gate in
-// the system prompt, but we NEVER surface `reasoning_content` to the user —
-// only `content` is collected, displayed, or parsed as JSON. See the request
-// body builder below (buildNvidiaBody) and the SSE loop in
-// streamAIResponse for where reasoning_content is intentionally dropped.
-//
-// IMPORTANT — reasoning_budget vs max_tokens:
-// Both reasoning tokens AND the final content tokens are drawn from the same
-// max_tokens ceiling. If reasoning_budget is set higher than (or too close
-// to) max_tokens, the model can spend its entire budget thinking and never
-// emit the actual answer — content comes back empty, JSON parsing fails,
-// getChunkWithRetry's hasKeys check fails, it silently retries forever, and
-// generation looks "stuck" with no error ever printed. To prevent this,
-// reasoning_budget is computed PER CALL as a safe fraction of whatever
-// maxTokens was actually passed in for that call (reading chunks pass much
-// smaller budgets — 6000/8192 — than a hypothetical 16384 max), never a
-// fixed constant that could exceed the call's own max_tokens.
-const ENABLE_THINKING = true
-const REASONING_BUDGET_CAP = 16384       // hard ceiling, matches the NVIDIA example
-const REASONING_BUDGET_FRACTION = 0.5    // never let thinking eat more than half the call's budget
-
-function computeReasoningBudget(maxTokens: number): number {
-  return Math.max(256, Math.min(REASONING_BUDGET_CAP, Math.floor(maxTokens * REASONING_BUDGET_FRACTION)))
 }
 
 // ── Read the key from SecureStore at call time (never at module load) ──────────
@@ -78,7 +44,7 @@ export interface AIMessage {
 }
 
 // ── Shared request-body builder so every call site sends identical NVIDIA
-//    parameters (model, reasoning controls) without repeating them ───────────
+//    parameters (model, temperature, top_p) without repeating them ──────────
 function buildNvidiaBody(
   messages: AIMessage[],
   maxTokens: number,
@@ -90,12 +56,8 @@ function buildNvidiaBody(
     messages,
     max_tokens: maxTokens,
     temperature,
-    top_p: 0.95,
+    top_p: 1.00,
     stream,
-    extra_body: {
-      chat_template_kwargs: { enable_thinking: ENABLE_THINKING },
-      reasoning_budget: computeReasoningBudget(maxTokens),
-    },
   })
 }
 
@@ -112,22 +74,16 @@ async function getAIResponseWithKey(
   // when this function is called. All 5 reading chunks share one NVIDIA key
   // and are serialized through runQueued (see groqQueue.ts): chunk 1 fetches
   // immediately, but chunks 2-5 sit waiting in line while chunk 1's response
-  // streams back. On nemotron-3-ultra-550b-a55b (550B total, 55B active,
-  // thinking enabled), a single ~6000-8192 token chunk can genuinely take
-  // several minutes — this is a much larger, slower-to-generate model than
-  // the nemotron-3-super-120b-a12b this timeout was originally tuned for.
-  // The default below (600000ms = 10 minutes) reflects Ultra's real
-  // generation time, not a workaround for a bug: if the abort timer were
-  // started here, outside the queue, every queued chunk's clock would
-  // already be ticking down during that wait — so by the time chunk 4 or 5
-  // finally got its turn, its timeout could have nearly or fully expired
-  // already, aborting it within moments of actually starting. That is
-  // exactly what produced the "FAILED: Aborted" errors immediately after
-  // chunk 1's success. Creating the AbortController AND its setTimeout
-  // inside the runQueued callback means the full timeoutMs budget is
-  // reserved for the network call itself, after this chunk's queue wait is
-  // over — not shared with (or consumed by) time spent
-  // waiting behind other chunks on the same key.
+  // streams back. On moonshotai/kimi-k2.6, a single ~6000-16384 token chunk
+  // can take several minutes on NVIDIA NIM's free tier.
+  // The default below (600000ms = 10 minutes) reflects real generation time,
+  // not a workaround for a bug: if the abort timer were started here, outside
+  // the queue, every queued chunk's clock would already be ticking down during
+  // that wait — so by the time chunk 4 or 5 finally got its turn, its timeout
+  // could have nearly or fully expired already, aborting it within moments of
+  // actually starting. Creating the AbortController AND its setTimeout inside
+  // the runQueued callback means the full timeoutMs budget is reserved for the
+  // network call itself, after this chunk's queue wait is over.
   let timer: ReturnType<typeof setTimeout> | null = null
   try {
     const requestBody = buildNvidiaBody(messages, maxTokens, temperature, false)
@@ -164,9 +120,8 @@ async function getAIResponseWithKey(
       return ''
     }
     const data = await res.json()
-    // `content` is the model's final answer. `reasoning_content` (Nemotron's
-    // internal thinking trace) is deliberately ignored here — it is never
-    // surfaced to the user and never fed into JSON parsing.
+    // `content` is the model's final answer. Extract from the standard
+    // OpenAI-compatible response shape.
     const result = data?.choices?.[0]?.message?.content || ''
     console.log(`[Zephyra] ✓ NVIDIA NIM key ...${apiKey.slice(-6)} done — ${result.length} chars`)
     return result
@@ -251,10 +206,7 @@ export async function streamAIResponse(
         if (data === '[DONE]') continue
         try {
           const delta = JSON.parse(data).choices?.[0]?.delta
-          // `reasoning_content` is Nemotron's internal thinking stream —
-          // intentionally never appended to fullText and never sent to
-          // onChunk, so it never reaches the chat UI. Only `content` (the
-          // model's actual spoken answer) is streamed to the user.
+          // Stream only the `content` field — the model's actual response.
           const text = delta?.content || ''
           if (text) { fullText += text; onChunk(text) }
         } catch {}

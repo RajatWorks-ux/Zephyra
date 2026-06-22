@@ -22,8 +22,8 @@
 //
 // NOTE ON NAMING: This file and its exported function names (runQueued,
 // fetchGroqWithBackoff) are kept exactly as-is on purpose, even though the
-// app's text AI now runs entirely on NVIDIA NIM (nvidia/nemotron-3-ultra-
-// 550b-a55b) and no longer touches Groq's API at all. Renaming would mean
+// app's text AI now runs entirely on NVIDIA NIM (moonshotai/kimi-k2.6)
+// and no longer touches Groq's API at all. Renaming would mean
 // touching every import across groqAI.ts, chatStore.ts, and forecastStore.ts
 // for zero functional benefit — the queueing and backoff behavior is fully
 // provider-agnostic and works identically against NVIDIA's endpoint.

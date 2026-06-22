@@ -10,7 +10,7 @@
 // setupStore.ts, RootNavigator.tsx — needs zero changes) now stores a single
 // NVIDIA NIM API key (format nvapi-...) instead of an OpenRouter key
 // (format sk-or-...). It is validated against NVIDIA's endpoint using the
-// model nvidia/nemotron-3-ultra-550b-a55b. The NVIDIA TTS key (KEY_NVIDIA_TTS)
+// model moonshotai/kimi-k2.6. The NVIDIA TTS key (KEY_NVIDIA_TTS)
 // is a completely separate credential for voice playback and is untouched.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -108,7 +108,7 @@ export async function testOpenRouterKey(key: string): Promise<{ valid: boolean; 
         'X-Title': 'Zephyra',
       },
       body: JSON.stringify({
-        model: 'nvidia/nemotron-3-ultra-550b-a55b',
+        model: 'moonshotai/kimi-k2.6',
         messages: [{ role: 'user', content: '1+1=' }],
         max_tokens: 1,
       }),
