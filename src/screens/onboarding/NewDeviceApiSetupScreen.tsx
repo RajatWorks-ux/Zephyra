@@ -11,7 +11,7 @@
 //
 // PHASE 4: Both keys are now NVIDIA NIM keys (format nvapi-...), but remain
 // two distinct, separately-stored credentials — Step 1 powers all text AI
-// (nvidia/nemotron-3-ultra-550b-a55b) across the whole app, Step 2 powers
+// (moonshotai/kimi-k2.6) across the whole app, Step 2 powers
 // voice-only narration (nvidia/chatterbox-multilingual). Same NVIDIA account
 // can supply both, or two different accounts — either works.
 //

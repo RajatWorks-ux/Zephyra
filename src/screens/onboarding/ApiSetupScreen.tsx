@@ -9,7 +9,7 @@
 // distinct, separately-stored credentials on purpose:
 //   - Step 1 key → KEY_OPENROUTER (name kept for compatibility) → powers ALL
 //     text generation across the whole app (groqAI.ts / chatStore.ts /
-//     forecastStore.ts) via nvidia/nemotron-3-ultra-550b-a55b.
+//     forecastStore.ts) via moonshotai/kimi-k2.6.
 //   - Step 2 key → KEY_NVIDIA_TTS → powers voice-only chart narration via
 //     nvidia/chatterbox-multilingual. A person could use one NVIDIA account's
 //     key for both, or two different NVIDIA accounts — either works, since
@@ -183,7 +183,7 @@ export function ApiSetupScreen() {
               <Text style={styles.symbol}>✦</Text>
               <Text style={styles.titleMain}>Set Up Your AI Key</Text>
               <Text style={styles.sub}>
-                Zephyra runs on NVIDIA's free NIM AI — powered by Nemotron 3 Ultra, a fast, genius-grade model. You need 1 key — it's free, no credit card. Your key stays on your device, encrypted. Never shared.
+                Zephyra runs on NVIDIA's free NIM AI — powered by Kimi K2.6, a powerful frontier model from Moonshot AI. You need 1 key — it's free, no credit card. Your key stays on your device, encrypted. Never shared.
               </Text>
 
               {/* QR code + instructions */}
