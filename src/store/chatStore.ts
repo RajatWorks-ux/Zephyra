@@ -215,17 +215,13 @@ async function extractAndSaveMemory(userId: string, responseText: string, chartD
         'X-Title': 'Zephyra',
       },
       body: JSON.stringify({
-        model: 'nvidia/nemotron-3-ultra-550b-a55b',
+        model: 'moonshotai/kimi-k2.6',
         messages: [
           { role: 'system', content: 'Extract structured data. Return ONLY valid JSON array, no preamble.' },
           { role: 'user', content: `Extract specific predictions or advice as JSON array. Each item: topic, planets_referenced (array), claim (1 sentence), is_time_bound (bool), time_bound_until (date or null), confidence (high/medium/low). Return [] if nothing extractable. Text: "${responseText.substring(0, 1500)}"` },
         ],
-        max_tokens: 400, temperature: 0.1,
-        top_p: 0.95,
-        extra_body: {
-          chat_template_kwargs: { enable_thinking: true },
-          reasoning_budget: 150,
-        },
+        max_tokens: 400, temperature: 1.00,
+        top_p: 1.00,
       }),
     }))
     if (!res.ok) return

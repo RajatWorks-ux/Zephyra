@@ -2,7 +2,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE 3: Full Vedic math + AI for every forecast tab
 // PHASE 4: AI transport changed from OpenRouter to NVIDIA NIM
-//   (nvidia/nemotron-3-ultra-550b-a55b), same single user-supplied key used
+//   (moonshotai/kimi-k2.6), same single user-supplied key used
 //   everywhere else in the app (constant name KEY_OPENROUTER, kept as-is).
 // Zero Math.random(). All scores computed from real planetary positions.
 // Week: 7-day AI call with per-day AI narrative
@@ -85,18 +85,6 @@ function getEnergyLabel(score: number): string {
   return 'Challenge Period'
 }
 
-// ── Reasoning budget helper ───────────────────────────────────────────────────
-// Same logic as groqAI.ts: reasoning tokens and final content tokens both
-// draw from max_tokens, so a fixed reasoning_budget that's larger than (or
-// too close to) a call's max_tokens can let the model spend its whole budget
-// thinking and never emit the actual forecast text/JSON — the call then
-// looks like it "failed" with a too-short response and silently retries.
-// Capping reasoning at half of whatever maxTokens this call actually passed
-// in (750–1600 across today/week/month/year) guarantees room is left for
-// the real output.
-function computeReasoningBudget(maxTokens: number): number {
-  return Math.max(150, Math.min(16384, Math.floor(maxTokens * 0.5)))
-}
 
 // ── AI call (via NVIDIA NIM) with retry ──────────────────────────────────────
 // Function name kept as callOpenRouter (not renamed) on purpose — every call
@@ -122,18 +110,14 @@ async function callOpenRouter(
           'X-Title': 'Zephyra',
         },
         body: JSON.stringify({
-          model: 'nvidia/nemotron-3-ultra-550b-a55b',
+          model: 'moonshotai/kimi-k2.6',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
           ],
           max_tokens: maxTokens,
-          temperature: 0.28,
-          top_p: 0.95,
-          extra_body: {
-            chat_template_kwargs: { enable_thinking: true },
-            reasoning_budget: computeReasoningBudget(maxTokens),
-          },
+          temperature: 1.00,
+          top_p: 1.00,
         }),
       }))
       if (res.status === 429) {
