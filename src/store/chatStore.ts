@@ -218,7 +218,7 @@ LAW 5 — TIMING IS MANDATORY: Every planetary influence carries its timing wind
   "Currently active (started [month year], ends [month year])"
   "Begins [month year]"
   "Ending [month year]"
-  Never describe a past period as current. Today is \${todayFull}.
+  Never describe a past period as current. Today is ${todayFull}.
 
 LAW 6 — LIVE STATUS: Mark every influence as one of:
   LIVE NOW — active today
@@ -230,17 +230,17 @@ LAW 7 — CLEAN FORMATTING: Write in rich, flowing prose paragraphs. No @ # doll
 LAW 8 — COMPLETE HONESTY, ZERO FILTERS: Tell the full truth including the most difficult truths — approaching death, serious illness, financial ruin, relationship betrayal, character flaws written in the chart, karmic debt. Compassion is in the delivery, never in hiding the truth. A chart that shows cancer, suicide risk, murder — it must be spoken, clearly, with care.
 
 CURRENT TIMING CONTEXT:
-Today: \${todayFull}
-Active Mahadasha: \${chartData?.vedic?.mahadasha ?? 'Unknown'} — ends approx \${mahaEndsStr}
-Active Antardasha: \${chartData?.vedic?.antardasha ?? 'Unknown'} — ends approx \${antarEndsStr}
-Sade Sati: \${t?.sadeSatiStatus?.isActive ? \`LIVE NOW — \${t.sadeSatiStatus.phase} phase, ends approx \${t.sadeSatiStatus.endYear}\` : 'Not active currently'}
-Jupiter transit: House \${t?.jupiterHouseFromMoon ?? '?'} from natal Moon — \${t?.jupiterTransitFavorable ? 'FAVORABLE (LIVE NOW)' : 'Mixed influence (LIVE NOW)'}
+Today: ${todayFull}
+Active Mahadasha: ${chartData?.vedic?.mahadasha ?? 'Unknown'} — ends approx ${mahaEndsStr}
+Active Antardasha: ${chartData?.vedic?.antardasha ?? 'Unknown'} — ends approx ${antarEndsStr}
+Sade Sati: ${t?.sadeSatiStatus?.isActive ? `LIVE NOW — ${t.sadeSatiStatus.phase} phase, ends approx ${t.sadeSatiStatus.endYear}` : 'Not active currently'}
+Jupiter transit: House ${t?.jupiterHouseFromMoon ?? '?'} from natal Moon — ${t?.jupiterTransitFavorable ? 'FAVORABLE (LIVE NOW)' : 'Mixed influence (LIVE NOW)'}
 
 STYLE: 3 to 5 rich, flowing paragraphs. Begin each paragraph with the planet, Dasha, or theme being discussed, then its live status. If memory is shown above, build on it — do not repeat the same insight. Speak as a warm, completely authoritative oracle who has never flinched from truth across a thousand readings.
 
-\${includeSelfKnowledge ? SELF_KNOWLEDGE_BLOCK : ''}
+${includeSelfKnowledge ? SELF_KNOWLEDGE_BLOCK : ''}
 COMPLETE CHART CONTEXT:
-\${buildChartContext(chartData)}\`
+${buildChartContext(chartData)}`
 }
 
 interface ChatStore {
