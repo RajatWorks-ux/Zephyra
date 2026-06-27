@@ -10,15 +10,23 @@ import { useReadingStore } from './readingStore'
 
 const SKIP_LOGIN = true  // ← set false when ready to test real auth
 
+// Fixed, valid UUIDs for mock/dev mode — Supabase columns like
+// chat_sessions.user_id are real `uuid` type columns, so a plain string like
+// 'mock-user-001' gets rejected by Postgres with a 22P02 error. Using actual
+// UUID-shaped strings here means every insert/query against those columns
+// still works correctly while SKIP_LOGIN is true.
+const MOCK_USER_ID = '00000000-0000-4000-8000-000000000001'
+const MOCK_BIRTH_ID = '00000000-0000-4000-8000-000000000002'
+
 const MOCK_BIRTH_PROFILE = {
-  id: 'mock-birth-001', user_id: 'mock-user-001',
+  id: MOCK_BIRTH_ID, user_id: MOCK_USER_ID,
   birth_date: '2010-03-03', birth_time: '23:55:00', birth_time_known: true,
   birth_city: 'Chandigarh', birth_country: 'India',
   birth_lat: 30.7333, birth_lng: 76.7794, timezone: 'Asia/Kolkata',
   created_at: new Date().toISOString(),
 }
-const MOCK_PROFILE = { id: 'mock-user-001', display_name: 'Zephyra Dev User', avatar_url: null, auth_provider: 'mock' }
-const MOCK_SESSION = { user: { id: 'mock-user-001', email: 'dev@zephyra.app' }, access_token: 'mock-token' }
+const MOCK_PROFILE = { id: MOCK_USER_ID, display_name: 'Zephyra Dev User', avatar_url: null, auth_provider: 'mock' }
+const MOCK_SESSION = { user: { id: MOCK_USER_ID, email: 'dev@zephyra.app' }, access_token: 'mock-token' }
 
 interface Profile {
   id: string; display_name: string | null; avatar_url: string | null; auth_provider: string | null
