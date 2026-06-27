@@ -1999,14 +1999,14 @@ Return ONLY valid JSON, no markdown, no preamble, no code fences, no special sym
   "avoid_now": ["5-7 specific things to avoid, each with the exact planetary reason — which planet in which house or transit creates this risk and why"],
   "best_window": "2 sentences naming the single best specific date or date range within this period, the exact planetary configuration that makes it favorable, and what it is best used for",
   "watch_for": "2 sentences on the single most important caution — name the specific Graha, its Bhava, the Nakshatra it is transiting, whether this is already active or starting on a specific date, and what area of life it most directly threatens"
-}\``
+}`
 
   const { result: forecastResult } = await getAIResponseWithFallback(
     [
       { role: 'system', content: forecastSystemPrompt },
       { role: 'user', content: contextData },
     ],
-    1200,
+    2200,
     90000,
     0.3,
   )
@@ -2014,7 +2014,24 @@ Return ONLY valid JSON, no markdown, no preamble, no code fences, no special sym
   if (!forecastResult) return null
   try {
     const clean = forecastResult.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-    const parsed = JSON.parse(clean)
+    let parsed: any
+    try {
+      parsed = JSON.parse(clean)
+    } catch {
+      try { parsed = JSON.parse(repairJSON(clean)) } catch {}
+    }
+    if (!parsed) {
+      const start = clean.indexOf('{')
+      const end = clean.lastIndexOf('}')
+      if (start !== -1 && end !== -1 && end > start) {
+        const slice = clean.substring(start, end + 1)
+        try { parsed = JSON.parse(slice) } catch {}
+        if (!parsed) {
+          try { parsed = JSON.parse(repairJSON(slice)) } catch {}
+        }
+      }
+    }
+    if (!parsed) throw new Error('Could not extract valid JSON from forecast response')
     return {
       verdict: parsed.verdict ?? '',
       doNow: Array.isArray(parsed.do_now) ? parsed.do_now : [],
