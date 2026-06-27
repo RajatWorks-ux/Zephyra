@@ -620,7 +620,7 @@ export function ForecastScreen() {
   const { chartData } = useReadingStore()
   const { session } = useAuthStore()
   const { selectedLanguage } = useSettingsStore()
-  const userId = session?.user?.id ?? 'mock-user-001'
+  const userId = session?.user?.id ?? '00000000-0000-4000-8000-000000000001'
 
   const [oracleVisible, setOracleVisible] = useState(false)
   const [oracleContext, setOracleContext] = useState('')

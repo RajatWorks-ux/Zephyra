@@ -22,7 +22,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react'
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList,
   KeyboardAvoidingView, Platform, Animated, ActivityIndicator,
-  Alert, Dimensions, ScrollView,
+  Alert, Dimensions, ScrollView, Keyboard,
 } from 'react-native'
 import { Video, ResizeMode } from 'expo-av'
 import { LinearGradient } from 'expo-linear-gradient'
@@ -324,10 +324,29 @@ export function ChatScreen({ route }: any) {
   const [showDrawer, setShowDrawer] = useState(false)
   const [creatingSession, setCreatingSession] = useState(false)
   const [hasApiKey, setHasApiKey] = useState(true)
+  const [keyboardVisible, setKeyboardVisible] = useState(false)
   const flatListRef = useRef<FlatList>(null)
   const inputRef = useRef<TextInput>(null)
   const statusAnim = useRef(new Animated.Value(1)).current
-  const userId = session?.user?.id ?? 'mock-user-001'
+  const userId = session?.user?.id ?? '00000000-0000-4000-8000-000000000001'
+
+  // ── Keyboard visibility tracking ─────────────────────────────────────────
+  // The floating bottom tab bar (position: absolute) does NOT get pushed up
+  // or hidden when the keyboard opens — the keyboard simply draws over it.
+  // So the input bar's bottom padding, which normally clears the tab bar,
+  // becomes a dead gap once the keyboard is showing (KeyboardAvoidingView
+  // already lifted the whole screen). Track keyboard state so that padding
+  // can drop to just the safe-area inset while the keyboard is up.
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow'
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide'
+    const showSub = Keyboard.addListener(showEvt, () => setKeyboardVisible(true))
+    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false))
+    return () => {
+      showSub.remove()
+      hideSub.remove()
+    }
+  }, [])
 
   useEffect(() => {
     loadSessions(userId)
@@ -444,8 +463,13 @@ export function ChatScreen({ route }: any) {
   const showWelcome = !isLoading && displayMessages.length === 0 && !lastError
   // Clearance so the input bar always sits above the floating tab bar, with
   // a little breathing room — uses the real device inset instead of a
-  // hardcoded guess.
-  const inputBottomPad = Math.max(insets.bottom, 8) + TAB_BAR_CONTENT_HEIGHT - 4
+  // hardcoded guess. Once the keyboard is open, the tab bar is hidden behind
+  // it (KeyboardAvoidingView has already lifted this whole screen), so that
+  // extra clearance is no longer needed and would otherwise leave a dead
+  // gap between the input and the keyboard.
+  const inputBottomPad = keyboardVisible
+    ? Math.max(insets.bottom, 8)
+    : Math.max(insets.bottom, 8) + TAB_BAR_CONTENT_HEIGHT - 4
 
   return (
     <View style={styles.root}>
@@ -466,7 +490,7 @@ export function ChatScreen({ route }: any) {
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+          keyboardVerticalOffset={0}
         >
           {/* Header — hamburger left · title+session center · new-chat right */}
           <BlurView intensity={24} tint="dark" style={styles.header}>
